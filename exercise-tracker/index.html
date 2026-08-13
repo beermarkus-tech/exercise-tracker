@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Exercise Tracker</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --bg:       #ffffff;
+  --bg2:      #f2f2f7;
+  --bg3:      #e5e5ea;
+  --text:     #1c1c1e;
+  --text2:    #3c3c43;
+  --text3:    #8e8e93;
+  --border:   #d1d1d6;
+  --accent:   #34c759;
+  --accent-d: #248a3d;
+  --blue:     #007aff;
+  --orange:   #ff9500;
+  --red:      #ff3b30;
+  --amber:    #ffcc00;
+  --done:     #34c759;
+  --modified: #007aff;
+  --skipped:  #8e8e93;
+  --radius:   16px;
+  --radius-sm:10px;
+  --nav-h:    72px;
+  --top-h:    60px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:     #000000;
+    --bg2:    #1c1c1e;
+    --bg3:    #2c2c2e;
+    --text:   #ffffff;
+    --text2:  #ebebf5;
+    --text3:  #636366;
+    --border: #38383a;
+    --accent: #30d158;
+    --accent-d:#248a3d;
+    --blue:   #0a84ff;
+    --orange: #ff9f0a;
+    --red:    #ff453a;
+    --amber:  #ffd60a;
+  }
+}
+
+html { font-size: 17px; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ── SCREENS ── */
+.screen { display: none; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 12px); }
+.screen.active { display: block; }
+
+/* ── TOPBAR ── */
+.topbar {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding: 12px 20px 12px;
+  min-height: var(--top-h);
+  background: var(--bg);
+  position: sticky; top: 0; z-index: 10;
+  border-bottom: 0.5px solid var(--border);
+}
+.topbar h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.date-btn {
+  font-size: 15px; font-weight: 500;
+  color: var(--blue); background: none;
+  border: none; cursor: pointer; padding: 6px 0;
+}
+
+/* ── BOTTOM NAV ── */
+nav {
+  display: flex;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: rgba(var(--bg-rgb, 255,255,255), 0.85);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-top: 0.5px solid var(--border);
+  z-index: 100;
+}
+@media (prefers-color-scheme: dark) { nav { background: rgba(0,0,0,0.85); } }
+nav button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; background: none; border: none; cursor: pointer;
+  color: var(--text3); font-size: 10px; font-weight: 500; padding: 8px 4px;
+  transition: color 0.15s; min-height: 44px;
+}
+nav button.active { color: var(--blue); }
+nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── SECTION HEADER ── */
+.section-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 20px 20px 10px;
+}
+.section-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text3); }
+.section-count { font-size: 13px; color: var(--text3); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* ── EXERCISE CARD ── */
+.exercise-card {
+  margin: 0 16px 10px;
+  background: var(--bg2);
+  border-radius: var(--radius);
+  border: 1.5px solid transparent;
+  transition: border-color 0.2s, opacity 0.2s;
+  overflow: hidden;
+}
+.exercise-card.status-done     { border-color: var(--done); }
+.exercise-card.status-modified { border-color: var(--modified); }
+.exercise-card.status-skipped  { opacity: 0.45; }
+
+.exercise-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 16px 16px 18px;
+}
+
+.ex-check {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--border); background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s; touch-action: manipulation;
+}
+.ex-check.done     { background: var(--done);     border-color: var(--done); }
+.ex-check.modified { background: var(--modified); border-color: var(--modified); }
+.ex-check.skipped  { background: var(--skipped);  border-color: var(--skipped); }
+.ex-check svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; display: none; }
+.ex-check.done svg, .ex-check.modified svg, .ex-check.skipped svg { display: block; }
+
+.ex-info { flex: 1; min-width: 0; }
+.ex-name   { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
+.ex-target { font-size: 14px; color: var(--text3); margin-top: 3px; }
+.ex-actual { font-size: 13px; color: var(--modified); margin-top: 3px; font-style: italic; }
+.ex-note   { font-size: 13px; color: var(--text3); margin-top: 3px; }
+
+.icon-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: none;
+  background: var(--bg3); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text2); flex-shrink: 0; touch-action: manipulation;
+}
+.icon-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── SYNC STATUS ── */
+#sync-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+  height: 3px; background: var(--blue);
+  transform: scaleX(0); transform-origin: left;
+  transition: transform 0.3s ease, opacity 0.5s ease;
+  opacity: 0;
+}
+#sync-bar.active { transform: scaleX(1); opacity: 1; }
+#sync-bar.done   { transform: scaleX(1); opacity: 0; }
+
+/* ── LOADING SCREEN ── */
+#loading-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 20px; z-index: 300;
+}
+#loading-screen .app-icon {
+  width: 80px; height: 80px; background: var(--accent); border-radius: 20px;
+  display: flex; align-items: center; justify-content: center; font-size: 40px;
+}
+#loading-screen p { font-size: 16px; color: var(--text3); }
+.spinner {
+  width: 32px; height: 32px; border: 3px solid var(--border);
+  border-top-color: var(--blue); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200;
+  display: flex; align-items: flex-end; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal-sheet {
+  background: var(--bg); border-radius: 20px 20px 0 0;
+  width: 100%; max-width: 620px;
+  padding: 0 0 calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
+  max-height: 92vh; overflow-y: auto;
+}
+.modal-overlay.open .modal-sheet { transform: translateY(0); }
+.modal-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+.modal-header { padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; }
+.modal-header h2 { font-size: 18px; font-weight: 700; }
+.modal-close { background: var(--bg3); border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; color: var(--text3); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 500; }
+.modal-body { padding: 8px 20px 0; }
+
+.planned-chip { background: var(--bg2); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px; font-size: 14px; color: var(--text3); }
+
+.field-group { margin-bottom: 18px; }
+.field-label { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.field-row { display: flex; gap: 12px; }
+.field-row .field-group { flex: 1; }
+
+.stepper { display: flex; align-items: center; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg2); }
+.stepper button { width: 50px; height: 50px; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--blue); flex-shrink: 0; font-weight: 300; touch-action: manipulation; }
+.stepper input { flex: 1; text-align: center; border: none; background: transparent; color: var(--text); font-size: 20px; font-weight: 600; height: 50px; min-width: 0; outline: none; }
+
+.text-input {
+  width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg2); color: var(--text); font-size: 16px; outline: none; font-family: inherit;
+}
+.text-input:focus { border-color: var(--blue); }
+
+.btn-row { display: flex; gap: 10px; margin-top: 24px; }
+.btn { flex: 1; padding: 16px 8px; border-radius: var(--radius-sm); border: none; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; touch-action: manipulation; }
+.btn-primary   { background: var(--blue);   color: white; }
+.btn-secondary { background: var(--bg3);    color: var(--text); }
+.btn-danger    { background: var(--red);    color: white; }
+.btn-green     { background: var(--accent); color: white; }
+
+/* ── HISTORY ── */
+.history-date-group { margin: 16px 16px 0; }
+.history-date-label { font-size: 14px; font-weight: 700; color: var(--text2); padding: 0 4px 8px; }
+.history-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 12px 16px; background: var(--bg2); border-radius: var(--radius-sm);
+  margin-bottom: 6px; font-size: 15px;
+}
+.history-status { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+.history-status.done     { background: rgba(52,199,89,0.15);  color: var(--done); }
+.history-status.modified { background: rgba(0,122,255,0.12);  color: var(--blue); }
+.history-status.skipped  { background: var(--bg3); color: var(--text3); }
+
+/* ── DASHBOARD ── */
+.streak-card {
+  background: linear-gradient(135deg, var(--accent-d), var(--accent));
+  color: white; border-radius: var(--radius);
+  padding: 24px; text-align: center; margin: 16px 16px 0;
+}
+.streak-num  { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -2px; }
+.streak-lbl  { font-size: 16px; opacity: 0.85; margin-top: 6px; font-weight: 500; }
+.dash-section { padding: 20px 16px 0; }
+.dash-section h2 { font-size: 13px; font-weight: 600; margin-bottom: 14px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
+.consistency-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; padding: 0 16px 16px; }
+.day-cell {
+  aspect-ratio: 1; border-radius: 5px; background: var(--bg2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--text3); font-weight: 500;
+}
+.day-cell.full  { background: var(--accent); color: white; }
+.day-cell.part  { background: var(--amber);  color: #1c1c1e; }
+.day-cell.today { outline: 2px solid var(--blue); outline-offset: 1px; }
+.chart-container { padding: 0 16px 20px; }
+.chart-select {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg2); color: var(--text); font-size: 15px; margin-bottom: 14px;
+  font-family: inherit;
+}
+
+/* ── PLAN EDITOR ── */
+.plan-day-group { margin: 0 16px; padding-bottom: 4px; }
+.plan-day-label { font-size: 20px; font-weight: 700; color: var(--text); padding: 20px 4px 10px; letter-spacing: -0.3px; }
+.plan-session-label { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 0 6px; }
+.plan-exercise-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 14px; background: var(--bg2); border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+.plan-ex-name { flex: 1; font-size: 15px; font-weight: 500; }
+.plan-ex-meta { font-size: 13px; color: var(--text3); white-space: nowrap; }
+.plan-edit-btn, .plan-del-btn { background: none; border: none; cursor: pointer; padding: 6px; touch-action: manipulation; }
+.plan-edit-btn svg, .plan-del-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.plan-edit-btn { color: var(--blue); }
+.plan-del-btn  { color: var(--red); }
+.add-exercise-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  padding: 13px; background: none; border: 1.5px dashed var(--border);
+  border-radius: var(--radius-sm); color: var(--blue); cursor: pointer;
+  font-size: 15px; font-weight: 500; margin-bottom: 6px; font-family: inherit;
+  touch-action: manipulation;
+}
+
+.loader { display: flex; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text3); font-size: 16px; gap: 12px; }
+.empty  { text-align: center; padding: 60px 20px; color: var(--text3); }
+.empty-icon { font-size: 52px; margin-bottom: 14px; }
+.empty p { font-size: 16px; }
+
+input[type="date"] {
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg2); color: var(--text); font-size: 16px; width: 100%; outline: none; font-family: inherit;
+}
+
+@media (min-width: 600px) {
+  .screen { max-width: 640px; margin: 0 auto; }
+  nav { max-width: 640px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
+  .modal-sheet { max-width: 540px; border-radius: 20px; margin-bottom: 40px; }
+  .modal-overlay { align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading-screen">
+  <div class="app-icon">🏋️</div>
+  <div class="spinner"></div>
+  <p>Loading your plan…</p>
+</div>
+
+<!-- Sync indicator -->
+<div id="sync-bar"></div>
+
+<div id="app" style="display:none;">
+
+  <div class="screen active" id="screen-today">
+    <div class="topbar">
+      <h1 id="today-title">Today</h1>
+      <button class="date-btn" onclick="openDatePicker()">📅 <span id="topbar-date"></span></button>
+    </div>
+    <div id="today-content"></div>
+  </div>
+
+  <div class="screen" id="screen-history">
+    <div class="topbar"><h1>History</h1></div>
+    <div id="history-content"></div>
+  </div>
+
+  <div class="screen" id="screen-progress">
+    <div class="topbar"><h1>Progress</h1></div>
+    <div id="progress-content"></div>
+  </div>
+
+  <div class="screen" id="screen-plan">
+    <div class="topbar"><h1>Plan</h1></div>
+    <div id="plan-content"></div>
+  </div>
+
+  <nav>
+    <button class="active" onclick="switchTab('today')" id="nav-today">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Today
+    </button>
+    <button onclick="switchTab('history')" id="nav-history">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
+    </button>
+    <button onclick="switchTab('progress')" id="nav-progress">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Progress
+    </button>
+    <button onclick="switchTab('plan')" id="nav-plan">
+      <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Plan
+    </button>
+  </nav>
+</div>
+
+<!-- LOG MODAL -->
+<div class="modal-overlay" id="log-modal" onclick="closeModal('log-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2 id="modal-ex-name">Exercise</h2>
+      <button class="modal-close" onclick="closeModal('log-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="planned-chip" id="modal-planned-info"></div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Sets</div>
+          <div class="stepper">
+            <button onclick="step('modal-sets',-1)">−</button>
+            <input type="number" id="modal-sets" min="0" max="99">
+            <button onclick="step('modal-sets',1)">+</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Reps</div>
+          <div class="stepper">
+            <button onclick="step('modal-reps',-1)">−</button>
+            <input type="number" id="modal-reps" min="0" max="99">
+            <button onclick="step('modal-reps',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Duration</div>
+          <input type="text" id="modal-duration" class="text-input" placeholder="e.g. 25 min">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Weight</div>
+          <input type="text" id="modal-weight" class="text-input" placeholder="e.g. 10 kg">
+        </div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Note</div>
+        <input type="text" id="modal-note" class="text-input" placeholder="Optional note…">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="logSkip()">Skip</button>
+        <button class="btn btn-primary"   onclick="logModified()">Modified</button>
+        <button class="btn btn-green"     onclick="logDone()">✓ Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DATE PICKER MODAL -->
+<div class="modal-overlay" id="date-modal" onclick="closeModal('date-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2>Select Date</h2>
+      <button class="modal-close" onclick="closeModal('date-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="date" id="date-input">
+      <div class="btn-row" style="margin-top:20px;">
+        <button class="btn btn-secondary" onclick="closeModal('date-modal')">Cancel</button>
+        <button class="btn btn-primary"   onclick="applyDate()">Go</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PLAN EDIT MODAL -->
+<div class="modal-overlay" id="plan-modal" onclick="closeModal('plan-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2 id="plan-modal-title">Edit Exercise</h2>
+      <button class="modal-close" onclick="closeModal('plan-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-group">
+        <div class="field-label">Exercise Name</div>
+        <input type="text" id="plan-ex-name" class="text-input" placeholder="Exercise name">
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Sets</div>
+          <div class="stepper">
+            <button onclick="step('plan-sets',-1)">−</button>
+            <input type="number" id="plan-sets" min="0" max="99">
+            <button onclick="step('plan-sets',1)">+</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Reps</div>
+          <div class="stepper">
+            <button onclick="step('plan-reps',-1)">−</button>
+            <input type="number" id="plan-reps" min="0" max="99">
+            <button onclick="step('plan-reps',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Duration</div>
+          <input type="text" id="plan-duration" class="text-input" placeholder="e.g. 2 min">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Weight</div>
+          <input type="text" id="plan-weight" class="text-input" placeholder="e.g. 10 kg">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="closeModal('plan-modal')">Cancel</button>
+        <button class="btn btn-primary"   onclick="savePlanEdit()">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+// ── APP STATE ────────────────────────────────────────────────────────────────
+const appState = {
+  plan:      {},   // { Monday: { morning: [], evening: [] }, ... }
+  log:       [],   // recent log rows from Sheet
+  dashboard: null,
+  today:     '',   // ISO date string
+  dayName:   '',   // 'Monday' etc
+  // Runtime session log (what user has done today, keyed by session|exercise)
+  sessionLog: {}
+};
+
+// ── SYNC QUEUE — debounced 3s ────────────────────────────────────────────────
+let syncQueue   = {};  // key: 'session|exercise' → payload
+let syncTimer   = null;
+const SYNC_DELAY = 3000;
+
+function queueSync(payload) {
+  const key = payload.session + '|' + payload.exercise;
+  syncQueue[key] = payload;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(flushSync, SYNC_DELAY);
+}
+
+function flushSync() {
+  const entries = Object.values(syncQueue);
+  if (!entries.length) return;
+  syncQueue = {};
+  showSyncBar();
+  google.script.run
+    .withSuccessHandler(() => hideSyncBar())
+    .withFailureHandler(() => hideSyncBar())
+    .batchLog(entries);
+}
+
+function showSyncBar() {
+  const bar = document.getElementById('sync-bar');
+  bar.classList.remove('done');
+  bar.classList.add('active');
+}
+function hideSyncBar() {
+  const bar = document.getElementById('sync-bar');
+  bar.classList.add('done');
+  setTimeout(() => bar.classList.remove('active', 'done'), 600);
+}
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+function toIso(d) { return d.toISOString().split('T')[0]; }
+
+function formatDate(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString(undefined, { weekday:'long', month:'short', day:'numeric' });
+}
+
+function fmtTarget(ex) {
+  const p = [];
+  if (ex.sets && ex.reps) p.push(ex.sets + ' × ' + ex.reps);
+  else if (ex.reps)       p.push(ex.reps + ' reps');
+  if (ex.duration) p.push(ex.duration);
+  if (ex.weight)   p.push(ex.weight);
+  return p.join(' · ') || '—';
+}
+
+function fmtActual(ex) {
+  const p = [];
+  if (ex.actualSets && ex.actualReps) p.push(ex.actualSets + ' × ' + ex.actualReps);
+  else if (ex.actualReps) p.push(ex.actualReps + ' reps');
+  if (ex.actualDuration) p.push(ex.actualDuration);
+  if (ex.actualWeight)   p.push(ex.actualWeight);
+  return p.join(' · ');
+}
+
+function esc(s) { return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+function getDateDayName(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()];
+}
+
+// ── INIT — single Sheet call ──────────────────────────────────────────────────
+let currentDate = toIso(new Date());
+
+function initApp(data) {
+  appState.plan      = data.plan;
+  appState.log       = data.log;
+  appState.dashboard = data.dashboard;
+  appState.today     = data.today;
+  appState.dayName   = data.dayName;
+
+  // Hydrate session log from returned log data for today
+  appState.log.forEach(row => {
+    if (row.Date === currentDate) {
+      const key = row.Session + '|' + row.Exercise;
+      appState.sessionLog[key] = {
+        status:         row.Status,
+        actualSets:     row.ActualSets,
+        actualReps:     row.ActualReps,
+        actualDuration: row.ActualDuration,
+        actualWeight:   row.ActualWeight,
+        note:           row.Note
+      };
+    }
+  });
+
+  document.getElementById('loading-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  renderToday();
+}
+
+window.addEventListener('load', () => {
+  google.script.run
+    .withSuccessHandler(initApp)
+    .withFailureHandler(err => {
+      document.querySelector('#loading-screen p').textContent = 'Error loading data. Please reload.';
+      console.error(err);
+    })
+    .loadAll();
+});
+
+// ── TABS ─────────────────────────────────────────────────────────────────────
+let activeTab = 'today';
+function switchTab(tab) {
+  if (activeTab === tab) return;
+  activeTab = tab;
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('screen-' + tab).classList.add('active');
+  document.getElementById('nav-' + tab).classList.add('active');
+  // Render from appState — no network calls
+  if (tab === 'today')    renderToday();
+  if (tab === 'history')  renderHistory();
+  if (tab === 'progress') renderProgress();
+  if (tab === 'plan')     renderPlanScreen();
+}
+
+// ── TODAY ─────────────────────────────────────────────────────────────────────
+function getTodayPlan() {
+  const dayName = getDateDayName(currentDate);
+  return appState.plan[dayName] || { morning: [], evening: [] };
+}
+
+function getExStatus(session, exercise) {
+  const key = session + '|' + exercise;
+  return appState.sessionLog[key] || { status: 'pending' };
+}
+
+function renderToday() {
+  const dayName = getDateDayName(currentDate);
+  const isToday = currentDate === appState.today;
+  const plan    = appState.plan[dayName] || { morning: [], evening: [] };
+
+  document.getElementById('topbar-date').textContent = formatDate(currentDate).split(',')[0];
+  document.getElementById('today-title').textContent = isToday ? 'Today' : formatDate(currentDate).split(',')[0];
+
+  let html = '';
+  if (plan.morning.length) {
+    const statuses = plan.morning.map(ex => getExStatus('Morning', ex.exercise).status);
+    const done = statuses.filter(s => s !== 'pending').length;
+    html += `<div class="section-header">
+      <span class="section-dot" style="background:var(--orange)"></span>
+      <span class="section-title">Morning</span>
+      <span class="section-count">${done}/${plan.morning.length}</span>
+    </div>`;
+    plan.morning.forEach(ex => { html += exCard(ex, 'Morning'); });
+  }
+
+  if (plan.evening.length) {
+    const statuses = plan.evening.map(ex => getExStatus('Evening', ex.exercise).status);
+    const done = statuses.filter(s => s !== 'pending').length;
+    const isRowing = ['Tuesday','Thursday','Saturday'].includes(dayName);
+    html += `<div class="section-header">
+      <span class="section-dot" style="background:${isRowing ? 'var(--blue)' : 'var(--accent)'}"></span>
+      <span class="section-title">Evening</span>
+      <span class="section-count">${done}/${plan.evening.length}</span>
+    </div>`;
+    plan.evening.forEach(ex => { html += exCard(ex, 'Evening'); });
+  }
+
+  if (!plan.morning.length && !plan.evening.length) {
+    html = '<div class="empty"><div class="empty-icon">🌿</div><p>Rest day — enjoy it.</p></div>';
+  }
+
+  document.getElementById('today-content').innerHTML = html;
+}
+
+function exCard(ex, session) {
+  const logged = getExStatus(session, ex.exercise);
+  const s      = logged.status || 'pending';
+  const checkSvg = s === 'skipped'
+    ? `<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`
+    : `<svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`;
+  const actual = logged.actualSets || logged.actualReps || logged.actualDuration || logged.actualWeight
+    ? fmtActual({ actualSets: logged.actualSets, actualReps: logged.actualReps, actualDuration: logged.actualDuration, actualWeight: logged.actualWeight })
+    : '';
+  return `<div class="exercise-card status-${s}">
+    <div class="exercise-row">
+      <div class="ex-check ${s}" onclick="quickDone('${session}','${esc(ex.exercise)}')">${checkSvg}</div>
+      <div class="ex-info">
+        <div class="ex-name">${ex.exercise}</div>
+        <div class="ex-target">${fmtTarget(ex)}</div>
+        ${actual ? `<div class="ex-actual">Done: ${actual}</div>` : ''}
+        ${logged.note ? `<div class="ex-note">${logged.note}</div>` : ''}
+      </div>
+      <button class="icon-btn" onclick="openLogModal('${session}','${esc(ex.exercise)}')">
+        <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+    </div>
+  </div>`;
+}
+
+function quickDone(session, exercise) {
+  const key    = session + '|' + exercise;
+  const logged = appState.sessionLog[key] || {};
+  const dayName = getDateDayName(currentDate);
+  const plan   = appState.plan[dayName] || { morning:[], evening:[] };
+  const arr    = session === 'Morning' ? plan.morning : plan.evening;
+  const ex     = arr.find(e => e.exercise === exercise);
+  if (!ex) return;
+
+  const newStatus = logged.status === 'done' ? 'pending' : 'done';
+
+  if (newStatus === 'pending') {
+    delete appState.sessionLog[key];
+  } else {
+    appState.sessionLog[key] = {
+      status: 'done',
+      actualSets: ex.sets, actualReps: ex.reps,
+      actualDuration: ex.duration, actualWeight: ex.weight, note: ''
+    };
+    queueSync({ date: currentDate, day: dayName, session, exercise, status: 'done',
+      actualSets: ex.sets, actualReps: ex.reps,
+      actualDuration: ex.duration, actualWeight: ex.weight, note: '' });
+  }
+  renderToday();
+}
+
+// ── LOG MODAL ────────────────────────────────────────────────────────────────
+let editingEx = null;
+
+function openLogModal(session, exercise) {
+  const dayName = getDateDayName(currentDate);
+  const plan    = appState.plan[dayName] || { morning:[], evening:[] };
+  const arr     = session === 'Morning' ? plan.morning : plan.evening;
+  const ex      = arr.find(e => e.exercise === exercise);
+  if (!ex) return;
+  const logged = getExStatus(session, exercise);
+  editingEx = { session, exercise, dayName, ex };
+
+  document.getElementById('modal-ex-name').textContent      = exercise;
+  document.getElementById('modal-planned-info').textContent = 'Plan: ' + fmtTarget(ex);
+  document.getElementById('modal-sets').value     = logged.actualSets     || ex.sets     || 0;
+  document.getElementById('modal-reps').value     = logged.actualReps     || ex.reps     || 0;
+  document.getElementById('modal-duration').value = logged.actualDuration || ex.duration || '';
+  document.getElementById('modal-weight').value   = logged.actualWeight   || ex.weight   || '';
+  document.getElementById('modal-note').value     = logged.note || '';
+  openModal('log-modal');
+}
+
+function commitLog(status) {
+  const { session, exercise, dayName, ex } = editingEx;
+  const key  = session + '|' + exercise;
+  const sets = document.getElementById('modal-sets').value;
+  const reps = document.getElementById('modal-reps').value;
+  const dur  = document.getElementById('modal-duration').value;
+  const wt   = document.getElementById('modal-weight').value;
+  const note = document.getElementById('modal-note').value;
+
+  if (status === 'skipped') {
+    appState.sessionLog[key] = { status: 'skipped', actualSets:'', actualReps:'', actualDuration:'', actualWeight:'', note:'' };
+  } else {
+    appState.sessionLog[key] = { status, actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note };
+  }
+
+  queueSync({ date: currentDate, day: dayName, session, exercise, status,
+    actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note });
+
+  closeModal('log-modal');
+  renderToday();
+}
+
+function logDone()     { commitLog('done'); }
+function logModified() { commitLog('modified'); }
+function logSkip()     { commitLog('skipped'); }
+
+// ── HISTORY ──────────────────────────────────────────────────────────────────
+function renderHistory() {
+  const log = appState.log;
+  if (!log.length) {
+    document.getElementById('history-content').innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>No sessions logged yet.</p></div>';
+    return;
+  }
+
+  const byDate = {};
+  log.forEach(r => {
+    if (!byDate[r.Date]) byDate[r.Date] = [];
+    byDate[r.Date].push(r);
+  });
+
+  const dates = Object.keys(byDate).sort().reverse();
+  let html = '';
+  dates.forEach(date => {
+    html += `<div class="history-date-group"><div class="history-date-label">${formatDate(date)}</div>`;
+    byDate[date].forEach(e => {
+      html += `<div class="history-item"><span>${e.Exercise}</span><span class="history-status ${e.Status}">${e.Status}</span></div>`;
+    });
+    html += '</div>';
+  });
+  document.getElementById('history-content').innerHTML = html;
+}
+
+// ── PROGRESS ─────────────────────────────────────────────────────────────────
+let chartEx = null, chartPva = null;
+
+function renderProgress() {
+  const d = appState.dashboard;
+  if (!d) { document.getElementById('progress-content').innerHTML = '<div class="loader"><div class="spinner"></div> Loading…</div>'; return; }
+
+  let gridHtml = '';
+  d.consistency.forEach(day => {
+    const cls     = day.done === day.total && day.total > 0 ? 'full' : day.done > 0 ? 'part' : '';
+    const isToday = day.date === appState.today ? 'today' : '';
+    const label   = new Date(day.date + 'T12:00:00').getDate();
+    gridHtml += `<div class="day-cell ${cls} ${isToday}" title="${day.date}: ${day.done}/${day.total}">${label}</div>`;
+  });
+
+  const exercises = Object.keys(d.byExercise);
+  const opts = exercises.map(e => `<option value="${esc(e)}">${e}</option>`).join('');
+
+  document.getElementById('progress-content').innerHTML = `
+    <div class="streak-card"><div class="streak-num">${d.streak}</div><div class="streak-lbl">day streak 🔥</div></div>
+    <div class="dash-section"><h2>Last 28 Days</h2></div>
+    <div class="consistency-grid">${gridHtml}</div>
+    <div class="dash-section"><h2>Reps over time</h2></div>
+    <div class="chart-container">
+      <select class="chart-select" id="ex-select" onchange="renderExChart()">${opts}</select>
+      <canvas id="ex-chart" height="200"></canvas>
+    </div>
+    <div class="dash-section"><h2>Planned vs Actual</h2></div>
+    <div class="chart-container">
+      <select class="chart-select" id="pva-select" onchange="renderPvaChart()">${opts}</select>
+      <canvas id="pva-chart" height="200"></canvas>
+    </div>`;
+
+  if (exercises.length) { renderExChart(); renderPvaChart(); }
+}
+
+function chartColors() {
+  const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  return { grid: dark ? '#2c2c2e' : '#f2f2f7', text: dark ? '#636366' : '#8e8e93' };
+}
+
+function renderExChart() {
+  const ex   = document.getElementById('ex-select').value;
+  const data = appState.dashboard.byExercise[ex] || [];
+  const { grid, text } = chartColors();
+  if (chartEx) chartEx.destroy();
+  chartEx = new Chart(document.getElementById('ex-chart').getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.date.slice(5)),
+      datasets: [{ label:'Reps', data: data.map(d => +d.actualReps || 0),
+        borderColor:'#34c759', backgroundColor:'rgba(52,199,89,0.1)',
+        tension:0.3, fill:true, pointRadius:5, pointBackgroundColor:'#34c759' }]
+    },
+    options: { responsive:true, plugins:{ legend:{ display:false } },
+      scales: { x:{ grid:{color:grid}, ticks:{color:text,maxTicksLimit:8} }, y:{ grid:{color:grid}, ticks:{color:text}, beginAtZero:true } } }
+  });
+}
+
+function renderPvaChart() {
+  const ex   = document.getElementById('pva-select').value;
+  const data = appState.dashboard.planVsActual[ex] || [];
+  const { grid, text } = chartColors();
+  if (chartPva) chartPva.destroy();
+  chartPva = new Chart(document.getElementById('pva-chart').getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.date.slice(5)),
+      datasets: [
+        { label:'Planned', data: data.map(d => d.plannedReps), backgroundColor:'rgba(0,122,255,0.3)', borderColor:'#007aff', borderWidth:1.5 },
+        { label:'Actual',  data: data.map(d => d.actualReps),  backgroundColor:'rgba(52,199,89,0.5)', borderColor:'#34c759', borderWidth:1.5 }
+      ]
+    },
+    options: { responsive:true, plugins:{ legend:{ labels:{ color:text } } },
+      scales: { x:{ grid:{color:grid}, ticks:{color:text,maxTicksLimit:8} }, y:{ grid:{color:grid}, ticks:{color:text}, beginAtZero:true } } }
+  });
+}
+
+// ── PLAN SCREEN ───────────────────────────────────────────────────────────────
+let editingPlan = null;
+
+function renderPlanScreen() {
+  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  let html = '<div style="padding-bottom:12px;">';
+  days.forEach(day => {
+    const dp = appState.plan[day];
+    if (!dp) return;
+    html += `<div class="plan-day-group"><div class="plan-day-label">${day}</div>`;
+    ['Morning','Evening'].forEach(session => {
+      const exs = session === 'Morning' ? dp.morning : dp.evening;
+      if (!exs || !exs.length) return;
+      html += `<div class="plan-session-label">${session}</div>`;
+      exs.forEach(ex => {
+        html += `<div class="plan-exercise-row">
+          <div class="plan-ex-name">${ex.exercise}</div>
+          <div class="plan-ex-meta">${fmtTarget(ex)}</div>
+          <button class="plan-edit-btn" onclick="openPlanEdit('${esc(day)}','${session}','${esc(ex.exercise)}')">
+            <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="plan-del-btn" onclick="deletePlanEx('${esc(day)}','${session}','${esc(ex.exercise)}')">
+            <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          </button>
+        </div>`;
+      });
+      html += `<button class="add-exercise-btn" onclick="openPlanAdd('${esc(day)}','${session}')">+ Add exercise</button>`;
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  document.getElementById('plan-content').innerHTML = html;
+}
+
+function openPlanEdit(day, session, exercise) {
+  const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
+  const ex  = arr.find(e => e.exercise === exercise);
+  if (!ex) return;
+  editingPlan = { mode:'edit', day, session, exercise };
+  document.getElementById('plan-modal-title').textContent = 'Edit Exercise';
+  document.getElementById('plan-ex-name').value  = ex.exercise;
+  document.getElementById('plan-sets').value     = ex.sets     || 0;
+  document.getElementById('plan-reps').value     = ex.reps     || 0;
+  document.getElementById('plan-duration').value = ex.duration || '';
+  document.getElementById('plan-weight').value   = ex.weight   || '';
+  openModal('plan-modal');
+}
+
+function openPlanAdd(day, session) {
+  editingPlan = { mode:'add', day, session };
+  document.getElementById('plan-modal-title').textContent = 'Add Exercise';
+  document.getElementById('plan-ex-name').value  = '';
+  document.getElementById('plan-sets').value     = 3;
+  document.getElementById('plan-reps').value     = 10;
+  document.getElementById('plan-duration').value = '';
+  document.getElementById('plan-weight').value   = '';
+  openModal('plan-modal');
+}
+
+function savePlanEdit() {
+  const name = document.getElementById('plan-ex-name').value.trim();
+  if (!name) return;
+  const sets = document.getElementById('plan-sets').value;
+  const reps = document.getElementById('plan-reps').value;
+  const dur  = document.getElementById('plan-duration').value;
+  const wt   = document.getElementById('plan-weight').value;
+  const { mode, day, session, exercise } = editingPlan;
+
+  closeModal('plan-modal');
+
+  if (mode === 'edit') {
+    // Update appState immediately
+    const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
+    const ex  = arr.find(e => e.exercise === exercise);
+    if (ex) { ex.sets = sets; ex.reps = reps; ex.duration = dur; ex.weight = wt; }
+    // Sync to Sheet
+    google.script.run
+      .withSuccessHandler(() => {})
+      .updatePlan({ day, session, exercise, fields: { Sets: sets, Reps: reps, Duration: dur, Weight: wt } });
+  } else {
+    // Add to appState
+    const newEx = { exercise: name, session, sets, reps, duration: dur, weight: wt, order: 99 };
+    const arr   = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
+    arr.push(newEx);
+    // Sync to Sheet
+    google.script.run
+      .withSuccessHandler(() => {})
+      .addExercise({ day, session, exercise: name, sets, reps, duration: dur, weight: wt });
+  }
+  renderPlanScreen();
+  if (activeTab === 'today') renderToday();
+}
+
+function deletePlanEx(day, session, exercise) {
+  if (!confirm('Remove "' + exercise + '" from ' + day + ' ' + session + '?')) return;
+  // Update appState
+  const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
+  const idx = arr.findIndex(e => e.exercise === exercise);
+  if (idx >= 0) arr.splice(idx, 1);
+  // Sync
+  google.script.run.withSuccessHandler(() => {}).removeExercise({ day, session, exercise });
+  renderPlanScreen();
+  if (activeTab === 'today') renderToday();
+}
+
+// ── DATE PICKER ───────────────────────────────────────────────────────────────
+function openDatePicker() {
+  document.getElementById('date-input').value = currentDate;
+  openModal('date-modal');
+}
+function applyDate() {
+  const val = document.getElementById('date-input').value;
+  if (!val) return;
+  currentDate = val;
+  // Reload session log for new date from appState.log
+  appState.sessionLog = {};
+  appState.log.forEach(row => {
+    if (row.Date === currentDate) {
+      const key = row.Session + '|' + row.Exercise;
+      appState.sessionLog[key] = {
+        status:         row.Status,
+        actualSets:     row.ActualSets,
+        actualReps:     row.ActualReps,
+        actualDuration: row.ActualDuration,
+        actualWeight:   row.ActualWeight,
+        note:           row.Note
+      };
+    }
+  });
+  closeModal('date-modal');
+  renderToday();
+}
+
+// ── MODAL HELPERS ─────────────────────────────────────────────────────────────
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function step(id, d)    { const el = document.getElementById(id); el.value = Math.max(0, (+el.value || 0) + d); }
+</script>
+</body>
+</html>
