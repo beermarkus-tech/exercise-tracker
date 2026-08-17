@@ -1,11 +1,6 @@
 name: Clasp Push to Apps Script
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "exercise-tracker/**"
   workflow_dispatch: {}
 
 jobs:
