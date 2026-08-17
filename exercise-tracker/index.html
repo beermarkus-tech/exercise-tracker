@@ -305,6 +305,29 @@ html.is-wide .modal-overlay { align-items: center; }
 </head>
 <body>
 
+<div id="debug-viewport" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:red;color:#fff;font-size:11px;font-family:monospace;padding:4px;line-height:1.4;white-space:pre-wrap;"></div>
+<script>
+(function() {
+  function report() {
+    var el = document.getElementById('debug-viewport');
+    if (!el) return;
+    var vv = window.visualViewport;
+    el.textContent =
+      'screen.width=' + screen.width +
+      ' innerWidth=' + window.innerWidth +
+      ' docEl.clientWidth=' + document.documentElement.clientWidth +
+      ' dpr=' + window.devicePixelRatio +
+      ' vvScale=' + (vv ? vv.scale : 'n/a') +
+      ' vvWidth=' + (vv ? vv.width : 'n/a');
+  }
+  report();
+  window.addEventListener('resize', report);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', report);
+  setTimeout(report, 1000);
+  setTimeout(report, 3000);
+})();
+</script>
+
 <!-- Loading screen -->
 <div id="loading-screen">
   <div class="app-icon">🏋️</div>
