@@ -2,19 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Exercise Tracker</title>
-<script>
-(function() {
-  var realWidth = window.screen && window.screen.width;
-  var seenWidth = document.documentElement.clientWidth;
-  if (realWidth >= 600) {
-    document.documentElement.classList.add('is-wide');
-  } else if (realWidth > 0 && seenWidth > realWidth * 1.15) {
-    document.documentElement.style.zoom = seenWidth / realWidth;
-  }
-})();
-</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -303,36 +292,15 @@ input[type="date"] {
   background: var(--bg2); color: var(--text); font-size: 16px; width: 100%; outline: none; font-family: inherit;
 }
 
-html.is-wide .screen { max-width: 640px; margin: 0 auto; }
-html.is-wide nav { max-width: 640px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
-html.is-wide .modal-sheet { max-width: 540px; border-radius: 20px; margin-bottom: 40px; }
-html.is-wide .modal-overlay { align-items: center; }
+@media (min-width: 600px) {
+  .screen { max-width: 640px; margin: 0 auto; }
+  nav { max-width: 640px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
+  .modal-sheet { max-width: 540px; border-radius: 20px; margin-bottom: 40px; }
+  .modal-overlay { align-items: center; }
+}
 </style>
 </head>
 <body>
-
-<div id="debug-viewport" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:red;color:#fff;font-size:11px;font-family:monospace;padding:4px;line-height:1.4;white-space:pre-wrap;"></div>
-<script>
-(function() {
-  function report() {
-    var el = document.getElementById('debug-viewport');
-    if (!el) return;
-    var vv = window.visualViewport;
-    el.textContent =
-      'screen.width=' + screen.width +
-      ' innerWidth=' + window.innerWidth +
-      ' docEl.clientWidth=' + document.documentElement.clientWidth +
-      ' dpr=' + window.devicePixelRatio +
-      ' vvScale=' + (vv ? vv.scale : 'n/a') +
-      ' vvWidth=' + (vv ? vv.width : 'n/a');
-  }
-  report();
-  window.addEventListener('resize', report);
-  if (window.visualViewport) window.visualViewport.addEventListener('resize', report);
-  setTimeout(report, 1000);
-  setTimeout(report, 3000);
-})();
-</script>
 
 <!-- Loading screen -->
 <div id="loading-screen">
