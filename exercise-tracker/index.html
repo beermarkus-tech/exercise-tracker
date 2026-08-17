@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Exercise Tracker</title>
+<script>
+if (window.screen && window.screen.width >= 600) {
+  document.documentElement.classList.add('is-wide');
+}
+</script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
@@ -292,12 +297,10 @@ input[type="date"] {
   background: var(--bg2); color: var(--text); font-size: 16px; width: 100%; outline: none; font-family: inherit;
 }
 
-@media (min-width: 600px) {
-  .screen { max-width: 640px; margin: 0 auto; }
-  nav { max-width: 640px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
-  .modal-sheet { max-width: 540px; border-radius: 20px; margin-bottom: 40px; }
-  .modal-overlay { align-items: center; }
-}
+html.is-wide .screen { max-width: 640px; margin: 0 auto; }
+html.is-wide nav { max-width: 640px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
+html.is-wide .modal-sheet { max-width: 540px; border-radius: 20px; margin-bottom: 40px; }
+html.is-wide .modal-overlay { align-items: center; }
 </style>
 </head>
 <body>
