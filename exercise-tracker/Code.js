@@ -182,10 +182,23 @@ function logExercise(payload) {
   return { success: true };
 }
 
-// ─── BATCH LOG — write multiple entries at once (debounced from frontend) ─────
-function batchLog(entries) {
-  entries.forEach(e => logExercise(e));
-  return { success: true, count: entries.length };
+// ─── APPLY SYNC — flush the frontend's debounced write queue in one call ──────
+// entries: [{ type: 'log'|'planUpdate'|'planAdd'|'planRemove', payload }]
+function applySync(entries) {
+  const results = (entries || []).map(e => {
+    try {
+      switch (e.type) {
+        case 'log':        return logExercise(e.payload);
+        case 'planUpdate': return updatePlan(e.payload);
+        case 'planAdd':    return addExercise(e.payload);
+        case 'planRemove': return removeExercise(e.payload);
+        default:           return { error: 'Unknown sync action type: ' + e.type };
+      }
+    } catch (err) {
+      return { error: String(err) };
+    }
+  });
+  return { success: true, count: results.length, results };
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────

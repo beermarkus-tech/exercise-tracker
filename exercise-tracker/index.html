@@ -147,15 +147,31 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
 .icon-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ── SYNC STATUS ── */
-#sync-bar {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-  height: 3px; background: var(--blue);
-  transform: scaleX(0); transform-origin: left;
-  transition: transform 0.3s ease, opacity 0.5s ease;
-  opacity: 0;
+#sync-indicator {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 14px; z-index: 200;
+  width: 22px; height: 22px;
+  opacity: 0; transform: scale(0.7);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
 }
-#sync-bar.active { transform: scaleX(1); opacity: 1; }
-#sync-bar.done   { transform: scaleX(1); opacity: 0; }
+#sync-indicator.visible { opacity: 1; transform: scale(1); }
+#sync-indicator .sync-spinner {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--blue); border-radius: 50%;
+  opacity: 0; transition: opacity 0.15s ease;
+  animation: spin 0.8s linear infinite;
+}
+#sync-indicator .sync-check {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  stroke: var(--accent); fill: none; stroke-width: 2.5;
+  stroke-linecap: round; stroke-linejoin: round;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+#sync-indicator.syncing .sync-spinner { opacity: 1; }
+#sync-indicator.done .sync-check { opacity: 1; }
 
 /* ── LOADING SCREEN ── */
 #loading-screen {
@@ -310,7 +326,10 @@ input[type="date"] {
 </div>
 
 <!-- Sync indicator -->
-<div id="sync-bar"></div>
+<div id="sync-indicator">
+  <div class="sync-spinner"></div>
+  <svg class="sync-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+</div>
 
 <div id="app" style="display:none;">
 
@@ -488,39 +507,77 @@ const appState = {
   sessionLog: {}
 };
 
-// ── SYNC QUEUE — debounced 3s ────────────────────────────────────────────────
-let syncQueue   = {};  // key: 'session|exercise' → payload
-let syncTimer   = null;
+// ── SYNC QUEUE — unified, debounced 3s ─────────────────────────────────────
+// Every write the user makes (log entries, plan add/edit/delete) is queued
+// here instead of hitting the Sheet immediately. A single 3s idle timer
+// flushes the whole queue in one call, and #sync-indicator reflects whether
+// anything is still pending.
+let syncQueue    = [];   // [{ type, key, payload }]
+let syncTimer    = null;
+let syncInFlight = false;
 const SYNC_DELAY = 3000;
 
-function queueSync(payload) {
-  const key = payload.session + '|' + payload.exercise;
-  syncQueue[key] = payload;
+function enqueueSync(type, key, payload) {
+  if (type === 'planRemove') {
+    // If the item was added this session and never made it to the Sheet,
+    // cancel the pending add instead of sending a remove for it.
+    const addIdx = syncQueue.findIndex(a => a.type === 'planAdd' && a.key === key);
+    if (addIdx >= 0) {
+      syncQueue.splice(addIdx, 1);
+      scheduleFlush();
+      return;
+    }
+    // A pending edit for something about to be deleted is pointless.
+    syncQueue = syncQueue.filter(a => !(a.type === 'planUpdate' && a.key === key));
+  }
+
+  const idx = syncQueue.findIndex(a => a.type === type && a.key === key);
+  if (idx >= 0) syncQueue[idx] = { type, key, payload };
+  else syncQueue.push({ type, key, payload });
+  scheduleFlush();
+}
+
+function scheduleFlush() {
+  updateSyncIndicator();
   clearTimeout(syncTimer);
   syncTimer = setTimeout(flushSync, SYNC_DELAY);
 }
 
 function flushSync() {
-  const entries = Object.values(syncQueue);
-  if (!entries.length) return;
-  syncQueue = {};
-  showSyncBar();
+  clearTimeout(syncTimer);
+  syncTimer = null;
+  if (!syncQueue.length) return;
+  const actions = syncQueue.map(a => ({ type: a.type, payload: a.payload }));
+  syncQueue = [];
+  syncInFlight = true;
+  updateSyncIndicator();
   google.script.run
-    .withSuccessHandler(() => hideSyncBar())
-    .withFailureHandler(() => hideSyncBar())
-    .batchLog(entries);
+    .withSuccessHandler(() => { syncInFlight = false; updateSyncIndicator(); })
+    .withFailureHandler(err => { syncInFlight = false; updateSyncIndicator(); console.error(err); })
+    .applySync(actions);
 }
 
-function showSyncBar() {
-  const bar = document.getElementById('sync-bar');
-  bar.classList.remove('done');
-  bar.classList.add('active');
+function updateSyncIndicator() {
+  const el = document.getElementById('sync-indicator');
+  if (!el) return;
+  const pending = syncQueue.length > 0 || syncInFlight;
+  if (pending) {
+    el.classList.remove('done');
+    el.classList.add('visible', 'syncing');
+  } else if (el.classList.contains('visible')) {
+    el.classList.remove('syncing');
+    el.classList.add('done');
+    setTimeout(() => {
+      if (!syncQueue.length && !syncInFlight) el.classList.remove('visible', 'done');
+    }, 1500);
+  }
 }
-function hideSyncBar() {
-  const bar = document.getElementById('sync-bar');
-  bar.classList.add('done');
-  setTimeout(() => bar.classList.remove('active', 'done'), 600);
-}
+
+// Flush immediately if the app is backgrounded/closed before the 3s timer
+// fires, so pending changes aren't silently lost.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && syncQueue.length) flushSync();
+});
 
 // ── UTILS ────────────────────────────────────────────────────────────────────
 function toIso(d) { return d.toISOString().split('T')[0]; }
@@ -705,7 +762,7 @@ function quickDone(session, exercise) {
       actualSets: ex.sets, actualReps: ex.reps,
       actualDuration: ex.duration, actualWeight: ex.weight, note: ''
     };
-    queueSync({ date: currentDate, day: dayName, session, exercise, status: 'done',
+    enqueueSync('log', key, { date: currentDate, day: dayName, session, exercise, status: 'done',
       actualSets: ex.sets, actualReps: ex.reps,
       actualDuration: ex.duration, actualWeight: ex.weight, note: '' });
   }
@@ -749,7 +806,7 @@ function commitLog(status) {
     appState.sessionLog[key] = { status, actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note };
   }
 
-  queueSync({ date: currentDate, day: dayName, session, exercise, status,
+  enqueueSync('log', key, { date: currentDate, day: dayName, session, exercise, status,
     actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note });
 
   closeModal('log-modal');
@@ -939,19 +996,17 @@ function savePlanEdit() {
     const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
     const ex  = arr.find(e => e.exercise === exercise);
     if (ex) { ex.sets = sets; ex.reps = reps; ex.duration = dur; ex.weight = wt; }
-    // Sync to Sheet
-    google.script.run
-      .withSuccessHandler(() => {})
-      .updatePlan({ day, session, exercise, fields: { Sets: sets, Reps: reps, Duration: dur, Weight: wt } });
+    // Queue sync to Sheet
+    enqueueSync('planUpdate', day + '|' + session + '|' + exercise,
+      { day, session, exercise, fields: { Sets: sets, Reps: reps, Duration: dur, Weight: wt } });
   } else {
     // Add to appState
     const newEx = { exercise: name, session, sets, reps, duration: dur, weight: wt, order: 99 };
     const arr   = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
     arr.push(newEx);
-    // Sync to Sheet
-    google.script.run
-      .withSuccessHandler(() => {})
-      .addExercise({ day, session, exercise: name, sets, reps, duration: dur, weight: wt });
+    // Queue sync to Sheet
+    enqueueSync('planAdd', day + '|' + session + '|' + name,
+      { day, session, exercise: name, sets, reps, duration: dur, weight: wt });
   }
   renderPlanScreen();
   if (activeTab === 'today') renderToday();
@@ -963,8 +1018,8 @@ function deletePlanEx(day, session, exercise) {
   const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
   const idx = arr.findIndex(e => e.exercise === exercise);
   if (idx >= 0) arr.splice(idx, 1);
-  // Sync
-  google.script.run.withSuccessHandler(() => {}).removeExercise({ day, session, exercise });
+  // Queue sync
+  enqueueSync('planRemove', day + '|' + session + '|' + exercise, { day, session, exercise });
   renderPlanScreen();
   if (activeTab === 'today') renderToday();
 }
