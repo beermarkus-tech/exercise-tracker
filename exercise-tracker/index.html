@@ -5,9 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Exercise Tracker</title>
 <script>
-if (window.screen && window.screen.width >= 600) {
-  document.documentElement.classList.add('is-wide');
-}
+(function() {
+  var realWidth = window.screen && window.screen.width;
+  var seenWidth = document.documentElement.clientWidth;
+  if (realWidth >= 600) {
+    document.documentElement.classList.add('is-wide');
+  } else if (realWidth > 0 && seenWidth > realWidth * 1.15) {
+    document.documentElement.style.zoom = seenWidth / realWidth;
+  }
+})();
 </script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
