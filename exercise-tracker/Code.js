@@ -40,6 +40,9 @@ function sheetToObjects(sheet) {
   const headers = data[0];
   // Date columns — Sheets returns these as JS Date objects, not strings
   const dateCols = new Set(['ValidFrom','Date','LoggedAt']);
+  // Boolean columns — Sheets auto-converts typed TRUE/FALSE to native booleans,
+  // which String() lowercases to "true"/"false", breaking === 'TRUE' checks.
+  const boolCols = new Set(['Active']);
   return data.slice(1).map(row => {
     const obj = {};
     headers.forEach((h, i) => {
@@ -47,6 +50,8 @@ function sheetToObjects(sheet) {
       if (dateCols.has(h) && val instanceof Date) {
         // Format as ISO date string (yyyy-MM-dd) for date columns
         obj[h] = (h === 'LoggedAt') ? val.toISOString() : toIso(val);
+      } else if (boolCols.has(h)) {
+        obj[h] = (val === true || String(val).toUpperCase() === 'TRUE') ? 'TRUE' : 'FALSE';
       } else {
         obj[h] = String(val ?? '');
       }
