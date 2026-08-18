@@ -71,6 +71,10 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   color: var(--blue); background: none;
   border: none; cursor: pointer; padding: 6px 0;
 }
+.sr-date-input {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; opacity: 0; pointer-events: none; border: none;
+}
 
 /* ── BOTTOM NAV ── */
 nav {
@@ -337,6 +341,7 @@ input[type="date"] {
     <div class="topbar">
       <h1 id="today-title">Today</h1>
       <button class="date-btn" onclick="openDatePicker()">📅 <span id="topbar-date"></span></button>
+      <input type="date" id="date-input" class="sr-date-input" onchange="applyDate()">
     </div>
     <div id="today-content"></div>
   </div>
@@ -427,23 +432,6 @@ input[type="date"] {
   </div>
 </div>
 
-<!-- DATE PICKER MODAL -->
-<div class="modal-overlay" id="date-modal" onclick="closeModal('date-modal')">
-  <div class="modal-sheet" onclick="event.stopPropagation()">
-    <div class="modal-handle"></div>
-    <div class="modal-header">
-      <h2>Select Date</h2>
-      <button class="modal-close" onclick="closeModal('date-modal')">×</button>
-    </div>
-    <div class="modal-body">
-      <input type="date" id="date-input">
-      <div class="btn-row" style="margin-top:20px;">
-        <button class="btn btn-secondary" onclick="closeModal('date-modal')">Cancel</button>
-        <button class="btn btn-primary"   onclick="applyDate()">Go</button>
-      </div>
-    </div>
-  </div>
-</div>
 
 <!-- PLAN EDIT MODAL -->
 <div class="modal-overlay" id="plan-modal" onclick="closeModal('plan-modal')">
@@ -681,11 +669,10 @@ function getExStatus(session, exercise) {
 
 function renderToday() {
   const dayName = getDateDayName(currentDate);
-  const isToday = currentDate === appState.today;
   const plan    = appState.plan[dayName] || { morning: [], evening: [] };
 
-  document.getElementById('topbar-date').textContent = formatDate(currentDate).split(',')[0];
-  document.getElementById('today-title').textContent = isToday ? 'Today' : formatDate(currentDate).split(',')[0];
+  document.getElementById('today-title').textContent = dayName;
+  document.getElementById('topbar-date').textContent  = formatDate(currentDate).split(',')[1].trim();
 
   let html = '';
   if (plan.morning.length) {
@@ -1024,10 +1011,16 @@ function deletePlanEx(day, session, exercise) {
   if (activeTab === 'today') renderToday();
 }
 
-// ── DATE PICKER ───────────────────────────────────────────────────────────────
+// ── DATE PICKER — opens the native OS/browser picker directly ──────────────────
 function openDatePicker() {
-  document.getElementById('date-input').value = currentDate;
-  openModal('date-modal');
+  const input = document.getElementById('date-input');
+  input.value = currentDate;
+  if (typeof input.showPicker === 'function') {
+    input.showPicker();
+  } else {
+    input.focus();
+    input.click();
+  }
 }
 function applyDate() {
   const val = document.getElementById('date-input').value;
@@ -1048,7 +1041,6 @@ function applyDate() {
       };
     }
   });
-  closeModal('date-modal');
   renderToday();
 }
 
