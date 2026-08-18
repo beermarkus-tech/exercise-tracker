@@ -72,8 +72,9 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   border: none; cursor: pointer; padding: 6px 0;
 }
 .sr-date-input {
-  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-  overflow: hidden; opacity: 0; pointer-events: none; border: none;
+  position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: 0;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;
+  opacity: 0; pointer-events: none; border: none;
 }
 
 /* ── BOTTOM NAV ── */
