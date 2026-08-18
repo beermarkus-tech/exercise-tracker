@@ -341,7 +341,7 @@ input[type="date"] {
   <div class="screen active" id="screen-today">
     <div class="topbar">
       <h1 id="today-title">Today</h1>
-      <button class="date-btn" onclick="openDatePicker()">📅 <span id="topbar-date"></span></button>
+      <label class="date-btn" for="date-input">📅 <span id="topbar-date"></span></label>
       <input type="date" id="date-input" class="sr-date-input" onchange="applyDate()">
     </div>
     <div id="today-content"></div>
@@ -674,6 +674,7 @@ function renderToday() {
 
   document.getElementById('today-title').textContent = dayName;
   document.getElementById('topbar-date').textContent  = formatDate(currentDate).split(',')[1].trim();
+  document.getElementById('date-input').value         = currentDate;
 
   let html = '';
   if (plan.morning.length) {
@@ -1012,17 +1013,7 @@ function deletePlanEx(day, session, exercise) {
   if (activeTab === 'today') renderToday();
 }
 
-// ── DATE PICKER — opens the native OS/browser picker directly ──────────────────
-function openDatePicker() {
-  const input = document.getElementById('date-input');
-  input.value = currentDate;
-  if (typeof input.showPicker === 'function') {
-    input.showPicker();
-  } else {
-    input.focus();
-    input.click();
-  }
-}
+// ── DATE PICKER — the date-btn label triggers the native picker directly ───────
 function applyDate() {
   const val = document.getElementById('date-input').value;
   if (!val) return;
