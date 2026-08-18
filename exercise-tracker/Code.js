@@ -74,6 +74,12 @@ function prevDay(isoStr) {
   return toIso(d);
 }
 
+function nextDay(isoStr) {
+  const d = new Date(isoStr + 'T12:00:00');
+  d.setDate(d.getDate() + 1);
+  return toIso(d);
+}
+
 function daysAgo(n) {
   const d = new Date();
   d.setDate(d.getDate() - n);
@@ -92,43 +98,67 @@ function loadAll() {
   const today     = toIso(new Date());
 
   // ── PLAN: active exercises per day+session ──────────────────────────────
-  // For each day, find the latest active version valid on or before today.
   // We use today's date for all days — the plan is the same regardless of
   // which calendar date we're looking at (it's a weekly recurring schedule).
   const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const plan = {};
 
   days.forEach(day => {
-    // Get all active rows for this day, valid on or before today
-    const dayRows = planRows.filter(r =>
-      r.Active === 'TRUE' &&
-      r.Day === day &&
-      r.ValidFrom <= today
-    );
-
-    // For each exercise name, keep only the latest version
-    const byExercise = {};
-    dayRows.forEach(r => {
-      if (!byExercise[r.Exercise] || r.ValidFrom > byExercise[r.Exercise].ValidFrom) {
-        byExercise[r.Exercise] = r;
-      }
-    });
-
-    const allEx = Object.values(byExercise);
+    const allEx = resolveDayPlan(day, today, planRows);
     plan[day] = {
       morning: allEx.filter(r => r.Session === 'Morning').sort((a,b) => +a.Order - +b.Order).map(r => planRowToEx(r)),
       evening: allEx.filter(r => r.Session === 'Evening').sort((a,b) => +a.Order - +b.Order).map(r => planRowToEx(r))
     };
   });
 
-  // ── LOG: last 60 days ───────────────────────────────────────────────────
+  // ── LOG: last 60 days, with unlogged past exercises filled in as skipped ─
+  // Today is excluded from the fill since the day isn't over yet.
   const cutoff = daysAgo(60);
-  const recentLog = logRows.filter(r => r.Date >= cutoff);
+  const recentLog = fillSkippedEntries(logRows.filter(r => r.Date >= cutoff), planRows, cutoff, today);
 
   // ── DASHBOARD ───────────────────────────────────────────────────────────
-  const dashboard = buildDashboard(logRows, today);
+  const dashboard = buildDashboard(recentLog, today);
 
   return { plan, log: recentLog, dashboard, today, dayName: getDayName(new Date()) };
+}
+
+// For a given day-of-week, the exercises active as of a specific date —
+// i.e. the latest plan version per exercise with ValidFrom <= dateIso.
+function resolveDayPlan(day, dateIso, planRows) {
+  const dayRows = planRows.filter(r =>
+    r.Active === 'TRUE' &&
+    r.Day === day &&
+    r.ValidFrom <= dateIso
+  );
+  const byExercise = {};
+  dayRows.forEach(r => {
+    if (!byExercise[r.Exercise] || r.ValidFrom > byExercise[r.Exercise].ValidFrom) {
+      byExercise[r.Exercise] = r;
+    }
+  });
+  return Object.values(byExercise);
+}
+
+// A planned exercise with no matching log row on a past date counts as an
+// implicit skip. Synthesize placeholder rows for those so History/Progress
+// see them without needing an explicit "Skip" action from the user.
+function fillSkippedEntries(logRows, planRows, cutoff, today) {
+  const logged = new Set(logRows.map(r => r.Date + '|' + r.Session + '|' + r.Exercise));
+  const synthetic = [];
+  for (let d = cutoff; d < today; d = nextDay(d)) {
+    const day = getDayName(new Date(d + 'T12:00:00'));
+    resolveDayPlan(day, d, planRows).forEach(r => {
+      const key = d + '|' + r.Session + '|' + r.Exercise;
+      if (logged.has(key)) return;
+      synthetic.push({
+        Date: d, Day: day, Session: r.Session, Exercise: r.Exercise, Order: r.Order,
+        PlannedSets: r.Sets, PlannedReps: r.Reps, PlannedDuration: r.Duration, PlannedWeight: r.Weight,
+        Status: 'skipped',
+        ActualSets: '', ActualReps: '', ActualDuration: '', ActualWeight: '', Note: '', LoggedAt: ''
+      });
+    });
+  }
+  return logRows.concat(synthetic);
 }
 
 function planRowToEx(r) {
@@ -182,13 +212,26 @@ function logExercise(payload) {
   return { success: true };
 }
 
+// Un-log an exercise (e.g. the user unchecks it again before it's over) so
+// it reverts to being implicitly skipped rather than leaving a stale row.
+function removeLog(payload) {
+  const sheet = getSheet(LOG_TAB);
+  const rows  = sheetToObjects(sheet);
+  const idx = rows.findIndex(r =>
+    r.Date === payload.date && r.Session === payload.session && r.Exercise === payload.exercise
+  );
+  if (idx >= 0) sheet.deleteRow(idx + 2);
+  return { success: true };
+}
+
 // ─── APPLY SYNC — flush the frontend's debounced write queue in one call ──────
-// entries: [{ type: 'log'|'planUpdate'|'planAdd'|'planRemove', payload }]
+// entries: [{ type: 'log'|'logRemove'|'planUpdate'|'planAdd'|'planRemove', payload }]
 function applySync(entries) {
   const results = (entries || []).map(e => {
     try {
       switch (e.type) {
         case 'log':        return logExercise(e.payload);
+        case 'logRemove':  return removeLog(e.payload);
         case 'planUpdate': return updatePlan(e.payload);
         case 'planAdd':    return addExercise(e.payload);
         case 'planRemove': return removeExercise(e.payload);
@@ -216,15 +259,18 @@ function buildDashboard(logRows, today) {
   }
 
   // Per-exercise history (last 16 entries each)
+  // A skipped day should show as 0 done, not silently fall back to the
+  // planned value (which would make it look identical to "done as planned").
   const byExercise = {};
   logRows.forEach(r => {
     if (!byExercise[r.Exercise]) byExercise[r.Exercise] = [];
+    const skipped = r.Status === 'skipped';
     byExercise[r.Exercise].push({
       date: r.Date, status: r.Status,
-      plannedReps: r.PlannedReps, actualReps:  r.ActualReps  || r.PlannedReps,
-      plannedSets: r.PlannedSets, actualSets:  r.ActualSets  || r.PlannedSets,
-      plannedDuration: r.PlannedDuration, actualDuration: r.ActualDuration || r.PlannedDuration,
-      plannedWeight: r.PlannedWeight, actualWeight: r.ActualWeight || r.PlannedWeight,
+      plannedReps: r.PlannedReps, actualReps:  skipped ? 0 : (r.ActualReps  || r.PlannedReps),
+      plannedSets: r.PlannedSets, actualSets:  skipped ? 0 : (r.ActualSets  || r.PlannedSets),
+      plannedDuration: r.PlannedDuration, actualDuration: skipped ? '' : (r.ActualDuration || r.PlannedDuration),
+      plannedWeight: r.PlannedWeight, actualWeight: skipped ? '' : (r.ActualWeight || r.PlannedWeight),
     });
   });
   Object.keys(byExercise).forEach(k => {
@@ -254,34 +300,6 @@ function buildDashboard(logRows, today) {
   });
 
   return { streak, byExercise, consistency, planVsActual };
-}
-
-function getDashboard() {
-  const logSheet = getSheet(LOG_TAB);
-  const logRows  = sheetToObjects(logSheet);
-  return buildDashboard(logRows, toIso(new Date()));
-}
-
-// ─── HISTORY ──────────────────────────────────────────────────────────────────
-function getHistory(page) {
-  const sheet = getSheet(LOG_TAB);
-  const rows  = sheetToObjects(sheet);
-  const pageSize = 40;
-  const start = ((page || 1) - 1) * pageSize;
-
-  const byDate = {};
-  rows.forEach(r => {
-    if (!byDate[r.Date]) byDate[r.Date] = [];
-    byDate[r.Date].push(r);
-  });
-
-  const dates     = Object.keys(byDate).sort().reverse();
-  const pageDates = dates.slice(start, start + pageSize);
-
-  return {
-    page: +page, totalDates: dates.length,
-    entries: pageDates.map(d => ({ date: d, exercises: byDate[d] }))
-  };
 }
 
 // ─── PLAN EDITOR ──────────────────────────────────────────────────────────────

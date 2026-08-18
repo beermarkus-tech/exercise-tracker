@@ -244,12 +244,15 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
 /* ── HISTORY ── */
 .history-date-group { margin: 16px 16px 0; }
 .history-date-label { font-size: 14px; font-weight: 700; color: var(--text2); padding: 0 4px 8px; }
+.history-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; align-items: start; }
+.history-col .plan-session-label { padding: 0 2px 6px; }
 .history-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px; background: var(--bg2); border-radius: var(--radius-sm);
-  margin-bottom: 6px; font-size: 15px;
+  display: flex; justify-content: space-between; align-items: center; gap: 6px;
+  padding: 10px 12px; background: var(--bg2); border-radius: var(--radius-sm);
+  margin-bottom: 6px; font-size: 14px; cursor: pointer; touch-action: manipulation;
 }
-.history-status { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 20px; }
+.history-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-status { flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; }
 .history-status.done     { background: rgba(52,199,89,0.15);  color: var(--done); }
 .history-status.modified { background: rgba(0,122,255,0.12);  color: var(--blue); }
 .history-status.skipped  { background: var(--bg3); color: var(--text3); }
@@ -425,9 +428,8 @@ input[type="date"] {
         <input type="text" id="modal-note" class="text-input" placeholder="Optional note…">
       </div>
       <div class="btn-row">
-        <button class="btn btn-secondary" onclick="logSkip()">Skip</button>
-        <button class="btn btn-primary"   onclick="logModified()">Modified</button>
-        <button class="btn btn-green"     onclick="logDone()">✓ Done</button>
+        <button class="btn btn-primary" onclick="logModified()">Modified</button>
+        <button class="btn btn-green"   onclick="logDone()">✓ Done</button>
       </div>
     </div>
   </div>
@@ -518,6 +520,13 @@ function enqueueSync(type, key, payload) {
     }
     // A pending edit for something about to be deleted is pointless.
     syncQueue = syncQueue.filter(a => !(a.type === 'planUpdate' && a.key === key));
+  }
+  if (type === 'logRemove') {
+    // A pending write for the entry being un-logged is superseded.
+    syncQueue = syncQueue.filter(a => !(a.type === 'log' && a.key === key));
+  } else if (type === 'log') {
+    // A pending removal for this entry is superseded by logging it again.
+    syncQueue = syncQueue.filter(a => !(a.type === 'logRemove' && a.key === key));
   }
 
   const idx = syncQueue.findIndex(a => a.type === type && a.key === key);
@@ -732,33 +741,64 @@ function exCard(ex, session) {
   </div>`;
 }
 
+// Keep appState.log (History's data source) in sync with an optimistic local
+// edit, so History/Progress reflect changes immediately without a reload.
+// fields=null means "un-log this", removing any local row for it.
+function upsertLocalLog(date, day, session, exercise, planned, fields) {
+  const idx = appState.log.findIndex(r => r.Date === date && r.Session === session && r.Exercise === exercise);
+  if (!fields) {
+    if (idx >= 0) appState.log.splice(idx, 1);
+    return;
+  }
+  if (idx >= 0) {
+    Object.assign(appState.log[idx], {
+      Status: fields.status, ActualSets: fields.actualSets, ActualReps: fields.actualReps,
+      ActualDuration: fields.actualDuration, ActualWeight: fields.actualWeight, Note: fields.note
+    });
+  } else {
+    appState.log.push({
+      Date: date, Day: day, Session: session, Exercise: exercise, Order: '',
+      PlannedSets: planned.sets || '', PlannedReps: planned.reps || '',
+      PlannedDuration: planned.duration || '', PlannedWeight: planned.weight || '',
+      Status: fields.status, ActualSets: fields.actualSets, ActualReps: fields.actualReps,
+      ActualDuration: fields.actualDuration, ActualWeight: fields.actualWeight,
+      Note: fields.note, LoggedAt: new Date().toISOString()
+    });
+  }
+}
+
 function quickDone(session, exercise) {
-  const key    = session + '|' + exercise;
-  const logged = appState.sessionLog[key] || {};
+  const key     = session + '|' + exercise;
+  const logged  = appState.sessionLog[key] || {};
   const dayName = getDateDayName(currentDate);
-  const plan   = appState.plan[dayName] || { morning:[], evening:[] };
-  const arr    = session === 'Morning' ? plan.morning : plan.evening;
-  const ex     = arr.find(e => e.exercise === exercise);
+  const plan    = appState.plan[dayName] || { morning:[], evening:[] };
+  const arr     = session === 'Morning' ? plan.morning : plan.evening;
+  const ex      = arr.find(e => e.exercise === exercise);
   if (!ex) return;
 
   const newStatus = logged.status === 'done' ? 'pending' : 'done';
+  const syncKey   = currentDate + '|' + key;
 
   if (newStatus === 'pending') {
+    // Un-ticking reverts to "not logged", which counts as an implicit skip
+    // for any day but today (today just isn't over yet).
     delete appState.sessionLog[key];
+    upsertLocalLog(currentDate, dayName, session, exercise, null, null);
+    enqueueSync('logRemove', syncKey, { date: currentDate, session, exercise });
   } else {
-    appState.sessionLog[key] = {
-      status: 'done',
-      actualSets: ex.sets, actualReps: ex.reps,
-      actualDuration: ex.duration, actualWeight: ex.weight, note: ''
-    };
-    enqueueSync('log', key, { date: currentDate, day: dayName, session, exercise, status: 'done',
-      actualSets: ex.sets, actualReps: ex.reps,
-      actualDuration: ex.duration, actualWeight: ex.weight, note: '' });
+    const fields = { status: 'done', actualSets: ex.sets, actualReps: ex.reps,
+      actualDuration: ex.duration, actualWeight: ex.weight, note: '' };
+    appState.sessionLog[key] = fields;
+    upsertLocalLog(currentDate, dayName, session, exercise, ex, fields);
+    enqueueSync('log', syncKey, { date: currentDate, day: dayName, session, exercise, ...fields });
   }
   renderToday();
+  if (activeTab === 'history') renderHistory();
 }
 
 // ── LOG MODAL ────────────────────────────────────────────────────────────────
+// Opened either from Today (currentDate, live plan) or from History (an
+// arbitrary past date, using that date's planned/logged values).
 let editingEx = null;
 
 function openLogModal(session, exercise) {
@@ -767,21 +807,34 @@ function openLogModal(session, exercise) {
   const arr     = session === 'Morning' ? plan.morning : plan.evening;
   const ex      = arr.find(e => e.exercise === exercise);
   if (!ex) return;
-  const logged = getExStatus(session, exercise);
-  editingEx = { session, exercise, dayName, ex };
+  showLogModal(currentDate, dayName, session, exercise, ex, getExStatus(session, exercise));
+}
 
+function openHistoryLogModal(dateIso, session, exercise) {
+  const entry = appState.log.find(r => r.Date === dateIso && r.Session === session && r.Exercise === exercise);
+  if (!entry) return;
+  const dayName = entry.Day || getDateDayName(dateIso);
+  const planned = { sets: entry.PlannedSets, reps: entry.PlannedReps, duration: entry.PlannedDuration, weight: entry.PlannedWeight };
+  const logged  = entry.Status && entry.Status !== 'skipped'
+    ? { status: entry.Status, actualSets: entry.ActualSets, actualReps: entry.ActualReps, actualDuration: entry.ActualDuration, actualWeight: entry.ActualWeight, note: entry.Note }
+    : { status: 'pending' };
+  showLogModal(dateIso, dayName, session, exercise, planned, logged);
+}
+
+function showLogModal(date, day, session, exercise, planned, logged) {
+  editingEx = { date, day, session, exercise, planned };
   document.getElementById('modal-ex-name').textContent      = exercise;
-  document.getElementById('modal-planned-info').textContent = 'Plan: ' + fmtTarget(ex);
-  document.getElementById('modal-sets').value     = logged.actualSets     || ex.sets     || 0;
-  document.getElementById('modal-reps').value     = logged.actualReps     || ex.reps     || 0;
-  document.getElementById('modal-duration').value = logged.actualDuration || ex.duration || '';
-  document.getElementById('modal-weight').value   = logged.actualWeight   || ex.weight   || '';
+  document.getElementById('modal-planned-info').textContent = 'Plan: ' + fmtTarget(planned);
+  document.getElementById('modal-sets').value     = logged.actualSets     || planned.sets     || 0;
+  document.getElementById('modal-reps').value     = logged.actualReps     || planned.reps     || 0;
+  document.getElementById('modal-duration').value = logged.actualDuration || planned.duration || '';
+  document.getElementById('modal-weight').value   = logged.actualWeight   || planned.weight   || '';
   document.getElementById('modal-note').value     = logged.note || '';
   openModal('log-modal');
 }
 
 function commitLog(status) {
-  const { session, exercise, dayName, ex } = editingEx;
+  const { date, day, session, exercise, planned } = editingEx;
   const key  = session + '|' + exercise;
   const sets = document.getElementById('modal-sets').value;
   const reps = document.getElementById('modal-reps').value;
@@ -789,22 +842,20 @@ function commitLog(status) {
   const wt   = document.getElementById('modal-weight').value;
   const note = document.getElementById('modal-note').value;
 
-  if (status === 'skipped') {
-    appState.sessionLog[key] = { status: 'skipped', actualSets:'', actualReps:'', actualDuration:'', actualWeight:'', note:'' };
-  } else {
-    appState.sessionLog[key] = { status, actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note };
-  }
+  const fields = { status, actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note };
 
-  enqueueSync('log', key, { date: currentDate, day: dayName, session, exercise, status,
-    actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note });
+  if (date === currentDate) appState.sessionLog[key] = fields;
+  upsertLocalLog(date, day, session, exercise, planned, fields);
+
+  enqueueSync('log', date + '|' + key, { date, day, session, exercise, ...fields });
 
   closeModal('log-modal');
   renderToday();
+  if (activeTab === 'history') renderHistory();
 }
 
 function logDone()     { commitLog('done'); }
 function logModified() { commitLog('modified'); }
-function logSkip()     { commitLog('skipped'); }
 
 // ── HISTORY ──────────────────────────────────────────────────────────────────
 function renderHistory() {
@@ -823,13 +874,27 @@ function renderHistory() {
   const dates = Object.keys(byDate).sort().reverse();
   let html = '';
   dates.forEach(date => {
-    html += `<div class="history-date-group"><div class="history-date-label">${formatDate(date)}</div>`;
-    byDate[date].forEach(e => {
-      html += `<div class="history-item"><span>${e.Exercise}</span><span class="history-status ${e.Status}">${e.Status}</span></div>`;
-    });
-    html += '</div>';
+    const morning = byDate[date].filter(e => e.Session === 'Morning').sort((a,b) => +a.Order - +b.Order);
+    const evening = byDate[date].filter(e => e.Session === 'Evening').sort((a,b) => +a.Order - +b.Order);
+    html += `<div class="history-date-group">
+      <div class="history-date-label">${formatDate(date)}</div>
+      <div class="history-grid">
+        <div class="history-col">${historyCol(date, morning)}</div>
+        <div class="history-col">${historyCol(date, evening)}</div>
+      </div>
+    </div>`;
   });
   document.getElementById('history-content').innerHTML = html;
+}
+
+function historyCol(date, entries) {
+  if (!entries.length) return '';
+  const session = entries[0].Session;
+  return `<div class="plan-session-label">${session}</div>` + entries.map(e => `
+    <div class="history-item" onclick="openHistoryLogModal('${date}','${e.Session}','${esc(e.Exercise)}')">
+      <span class="history-item-name">${e.Exercise}</span>
+      <span class="history-status ${e.Status}">${e.Status}</span>
+    </div>`).join('');
 }
 
 // ── PROGRESS ─────────────────────────────────────────────────────────────────
