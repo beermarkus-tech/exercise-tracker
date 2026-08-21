@@ -396,3 +396,24 @@ function setupInitialPlan() {
   rows.forEach(r => sheet.appendRow(r));
   return { success: true, rowsAdded: rows.length };
 }
+
+// ─── EXPORT — one-off manual migration helper, not called by doGet ────────────
+// Run this once from the Apps Script editor (select it in the function
+// dropdown, click Run). It writes the full Plan + Log data as JSON into a new
+// "Export" tab so it can be copied out and imported into Firestore. Purely
+// additive — does not touch anything the deployed web app uses.
+function exportAllData() {
+  const planRows = sheetToObjects(getSheet(PLAN_TAB));
+  const logRows  = sheetToObjects(getSheet(LOG_TAB));
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let out = ss.getSheetByName('Export');
+  if (!out) out = ss.insertSheet('Export');
+  out.clear();
+  out.getRange('A1').setValue('Plan (paste into migration script):');
+  out.getRange('A2').setValue(JSON.stringify(planRows));
+  out.getRange('A4').setValue('Log (paste into migration script):');
+  out.getRange('A5').setValue(JSON.stringify(logRows));
+
+  return { success: true, planRows: planRows.length, logRows: logRows.length };
+}
