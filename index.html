@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Exercise Tracker</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#34c759">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Exercise">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --bg:       #ffffff;
+  --bg2:      #f2f2f7;
+  --bg3:      #e5e5ea;
+  --text:     #1c1c1e;
+  --text2:    #3c3c43;
+  --text3:    #8e8e93;
+  --border:   #d1d1d6;
+  --accent:   #34c759;
+  --accent-d: #248a3d;
+  --blue:     #007aff;
+  --orange:   #ff9500;
+  --red:      #ff3b30;
+  --amber:    #ffcc00;
+  --done:     #34c759;
+  --modified: #007aff;
+  --skipped:  #8e8e93;
+  --radius:   16px;
+  --radius-sm:10px;
+  --nav-h:    72px;
+  --top-h:    60px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:     #000000;
+    --bg2:    #1c1c1e;
+    --bg3:    #2c2c2e;
+    --text:   #ffffff;
+    --text2:  #ebebf5;
+    --text3:  #636366;
+    --border: #38383a;
+    --accent: #30d158;
+    --accent-d:#248a3d;
+    --blue:   #0a84ff;
+    --orange: #ff9f0a;
+    --red:    #ff453a;
+    --amber:  #ffd60a;
+  }
+}
+
+html { font-size: 17px; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif; height: 100vh; overflow: hidden; }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ── SCREENS ── */
+.screen { display: none; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 12px); }
+.screen.active { display: block; }
+
+/* ── TOPBAR ── */
+.topbar {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  padding: 12px 20px 12px;
+  min-height: var(--top-h);
+  background: var(--bg);
+  position: sticky; top: 0; z-index: 10;
+  border-bottom: 0.5px solid var(--border);
+}
+.topbar h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+.date-btn {
+  font-size: 15px; font-weight: 500;
+  color: var(--blue); background: none;
+  border: none; cursor: pointer; padding: 6px 0;
+}
+.sr-date-input {
+  position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: 0;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;
+  opacity: 0; pointer-events: none; border: none;
+}
+
+/* ── BOTTOM NAV ── */
+nav {
+  display: flex;
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: rgba(var(--bg-rgb, 255,255,255), 0.85);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-top: 0.5px solid var(--border);
+  z-index: 100;
+}
+@media (prefers-color-scheme: dark) { nav { background: rgba(0,0,0,0.85); } }
+nav button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 4px; background: none; border: none; cursor: pointer;
+  color: var(--text3); font-size: 10px; font-weight: 500; padding: 8px 4px;
+  transition: color 0.15s; min-height: 44px;
+}
+nav button.active { color: var(--blue); }
+nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── SECTION HEADER ── */
+.section-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 20px 20px 10px;
+}
+.section-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.section-title { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text3); }
+.section-count { font-size: 13px; color: var(--text3); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* ── EXERCISE CARD ── */
+.exercise-card {
+  margin: 0 16px 10px;
+  background: var(--bg2);
+  border-radius: var(--radius);
+  border: 1.5px solid transparent;
+  transition: border-color 0.2s, opacity 0.2s;
+  overflow: hidden;
+}
+.exercise-card.status-done     { border-color: var(--done); }
+.exercise-card.status-modified { border-color: var(--modified); }
+.exercise-card.status-skipped  { opacity: 0.45; }
+
+.exercise-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 16px 16px 18px;
+}
+
+.ex-check {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid var(--border); background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.2s; touch-action: manipulation;
+}
+.ex-check.done     { background: var(--done);     border-color: var(--done); }
+.ex-check.modified { background: var(--modified); border-color: var(--modified); }
+.ex-check.skipped  { background: var(--skipped);  border-color: var(--skipped); }
+.ex-check svg { width: 16px; height: 16px; stroke: white; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; display: none; }
+.ex-check.done svg, .ex-check.modified svg, .ex-check.skipped svg { display: block; }
+
+.ex-info { flex: 1; min-width: 0; }
+.ex-name   { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; }
+.ex-target { font-size: 14px; color: var(--text3); margin-top: 3px; }
+.ex-actual { font-size: 13px; color: var(--modified); margin-top: 3px; font-style: italic; }
+.ex-note   { font-size: 13px; color: var(--text3); margin-top: 3px; }
+
+.icon-btn {
+  width: 40px; height: 40px; border-radius: 50%; border: none;
+  background: var(--bg3); display: flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--text2); flex-shrink: 0; touch-action: manipulation;
+}
+.icon-btn svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── SYNC STATUS ── */
+#sync-indicator {
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 14px; z-index: 200;
+  width: 22px; height: 22px;
+  opacity: 0; transform: scale(0.7);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  pointer-events: none;
+}
+#sync-indicator.visible { opacity: 1; transform: scale(1); }
+#sync-indicator .sync-spinner {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--blue); border-radius: 50%;
+  opacity: 0; transition: opacity 0.15s ease;
+  animation: spin 0.8s linear infinite;
+}
+#sync-indicator .sync-check {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  stroke: var(--accent); fill: none; stroke-width: 2.5;
+  stroke-linecap: round; stroke-linejoin: round;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+#sync-indicator.syncing .sync-spinner { opacity: 1; }
+#sync-indicator.done .sync-check { opacity: 1; }
+
+/* ── LOADING SCREEN ── */
+#loading-screen {
+  position: fixed; inset: 0; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 20px; z-index: 300;
+}
+#loading-screen .app-icon {
+  width: 80px; height: 80px; background: var(--accent); border-radius: 20px;
+  display: flex; align-items: center; justify-content: center; font-size: 40px;
+}
+#loading-screen p { font-size: 16px; color: var(--text3); }
+.spinner {
+  width: 32px; height: 32px; border: 3px solid var(--border);
+  border-top-color: var(--blue); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── MODAL ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200;
+  display: flex; align-items: flex-end; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal-sheet {
+  background: var(--bg); border-radius: 20px 20px 0 0;
+  width: 100%; max-width: 620px;
+  padding: 0 0 calc(24px + env(safe-area-inset-bottom, 0px));
+  transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.32,0.72,0,1);
+  max-height: 92vh; overflow-y: auto;
+}
+.modal-overlay.open .modal-sheet { transform: translateY(0); }
+.modal-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+.modal-header { padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; }
+.modal-header h2 { font-size: 18px; font-weight: 700; }
+.modal-close { background: var(--bg3); border: none; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; color: var(--text3); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: 500; }
+.modal-body { padding: 8px 20px 0; }
+
+.planned-chip { background: var(--bg2); border-radius: var(--radius-sm); padding: 12px 16px; margin-bottom: 20px; font-size: 14px; color: var(--text3); }
+
+.field-group { margin-bottom: 18px; }
+.field-label { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+.field-row { display: flex; gap: 12px; }
+.field-row .field-group { flex: 1; }
+
+.stepper { display: flex; align-items: center; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: var(--bg2); }
+.stepper button { width: 50px; height: 50px; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--blue); flex-shrink: 0; font-weight: 300; touch-action: manipulation; }
+.stepper input { flex: 1; text-align: center; border: none; background: transparent; color: var(--text); font-size: 20px; font-weight: 600; height: 50px; min-width: 0; outline: none; }
+
+.text-input {
+  width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg2); color: var(--text); font-size: 16px; outline: none; font-family: inherit;
+}
+.text-input:focus { border-color: var(--blue); }
+
+.btn-row { display: flex; gap: 10px; margin-top: 24px; }
+.btn { flex: 1; padding: 16px 8px; border-radius: var(--radius-sm); border: none; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; touch-action: manipulation; }
+.btn-primary   { background: var(--blue);   color: white; }
+.btn-secondary { background: var(--bg3);    color: var(--text); }
+.btn-danger    { background: var(--red);    color: white; }
+.btn-green     { background: var(--accent); color: white; }
+
+/* ── HISTORY ── */
+.history-date-group { margin: 16px 16px 0; }
+.history-date-label { font-size: 14px; font-weight: 700; color: var(--text2); padding: 0 4px 8px; }
+.history-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 0 8px; align-items: start; }
+.history-col { min-width: 0; }
+.history-col .plan-session-label { padding: 0 2px 6px; }
+.history-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 6px;
+  padding: 10px 10px; background: var(--bg2); border-radius: var(--radius-sm);
+  margin-bottom: 6px; font-size: 13px; cursor: pointer; touch-action: manipulation;
+  min-width: 0; max-width: 100%;
+}
+.history-item-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-status { flex-shrink: 0; font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; }
+.history-status.done     { background: rgba(52,199,89,0.15);  color: var(--done); }
+.history-status.modified { background: rgba(0,122,255,0.12);  color: var(--blue); }
+.history-status.skipped  { background: var(--bg3); color: var(--text3); }
+
+/* ── DASHBOARD ── */
+.streak-card {
+  background: linear-gradient(135deg, var(--accent-d), var(--accent));
+  color: white; border-radius: var(--radius);
+  padding: 24px; text-align: center; margin: 16px 16px 0;
+}
+.streak-num  { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -2px; }
+.streak-lbl  { font-size: 16px; opacity: 0.85; margin-top: 6px; font-weight: 500; }
+.dash-section { padding: 20px 16px 0; }
+.dash-section h2 { font-size: 13px; font-weight: 600; margin-bottom: 14px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
+.consistency-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; padding: 0 16px 16px; }
+.day-cell {
+  aspect-ratio: 1; border-radius: 5px; background: var(--bg2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--text3); font-weight: 500;
+}
+.day-cell.full  { background: var(--accent); color: white; }
+.day-cell.part  { background: var(--amber);  color: #1c1c1e; }
+.day-cell.today { outline: 2px solid var(--blue); outline-offset: 1px; }
+.chart-container { padding: 0 16px 20px; }
+.chart-select {
+  width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg2); color: var(--text); font-size: 15px; margin-bottom: 14px;
+  font-family: inherit;
+}
+
+/* ── PLAN EDITOR ── */
+.plan-day-group { margin: 0 16px; padding-bottom: 4px; }
+.plan-day-label { font-size: 20px; font-weight: 700; color: var(--text); padding: 20px 4px 10px; letter-spacing: -0.3px; }
+.plan-session-label { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 0 6px; }
+.plan-exercise-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 13px 14px; background: var(--bg2); border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+}
+.plan-ex-name { flex: 1; font-size: 15px; font-weight: 500; }
+.plan-ex-meta { font-size: 13px; color: var(--text3); white-space: nowrap; }
+.plan-edit-btn, .plan-del-btn { background: none; border: none; cursor: pointer; padding: 6px; touch-action: manipulation; }
+.plan-edit-btn svg, .plan-del-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.plan-edit-btn { color: var(--blue); }
+.plan-del-btn  { color: var(--red); }
+.add-exercise-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  padding: 13px; background: none; border: 1.5px dashed var(--border);
+  border-radius: var(--radius-sm); color: var(--blue); cursor: pointer;
+  font-size: 15px; font-weight: 500; margin-bottom: 6px; font-family: inherit;
+  touch-action: manipulation;
+}
+
+.loader { display: flex; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text3); font-size: 16px; gap: 12px; }
+.empty  { text-align: center; padding: 60px 20px; color: var(--text3); }
+.empty-icon { font-size: 52px; margin-bottom: 14px; }
+.empty p { font-size: 16px; }
+
+input[type="date"] {
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg2); color: var(--text); font-size: 16px; width: 100%; outline: none; font-family: inherit;
+}
+
+@media (min-width: 600px) {
+  .screen { max-width: 640px; margin: 0 auto; }
+  nav { max-width: 640px; left: 50%; transform: translateX(-50%); border-left: 0.5px solid var(--border); border-right: 0.5px solid var(--border); }
+  .modal-sheet { max-width: 540px; border-radius: 20px; margin-bottom: 40px; }
+  .modal-overlay { align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading-screen">
+  <div class="app-icon">🏋️</div>
+  <div class="spinner"></div>
+  <p>Loading your plan…</p>
+</div>
+
+<!-- Sync indicator -->
+<div id="sync-indicator">
+  <div class="sync-spinner"></div>
+  <svg class="sync-check" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+</div>
+
+<div id="app" style="display:none;">
+
+  <div class="screen active" id="screen-today">
+    <div class="topbar">
+      <h1 id="today-title">Today</h1>
+      <label class="date-btn" for="date-input">📅 <span id="topbar-date"></span></label>
+      <input type="date" id="date-input" class="sr-date-input" onchange="applyDate()">
+    </div>
+    <div id="today-content"></div>
+  </div>
+
+  <div class="screen" id="screen-history">
+    <div class="topbar"><h1>History</h1></div>
+    <div id="history-content"></div>
+  </div>
+
+  <div class="screen" id="screen-progress">
+    <div class="topbar"><h1>Progress</h1></div>
+    <div id="progress-content"></div>
+  </div>
+
+  <div class="screen" id="screen-plan">
+    <div class="topbar"><h1>Plan</h1></div>
+    <div id="plan-content"></div>
+  </div>
+
+  <nav>
+    <button class="active" onclick="switchTab('today')" id="nav-today">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Today
+    </button>
+    <button onclick="switchTab('history')" id="nav-history">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
+    </button>
+    <button onclick="switchTab('progress')" id="nav-progress">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Progress
+    </button>
+    <button onclick="switchTab('plan')" id="nav-plan">
+      <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      Plan
+    </button>
+  </nav>
+</div>
+
+<!-- LOG MODAL -->
+<div class="modal-overlay" id="log-modal" onclick="closeModal('log-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2 id="modal-ex-name">Exercise</h2>
+      <button class="modal-close" onclick="closeModal('log-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="planned-chip" id="modal-planned-info"></div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Sets</div>
+          <div class="stepper">
+            <button onclick="step('modal-sets',-1)">−</button>
+            <input type="number" id="modal-sets" min="0" max="99">
+            <button onclick="step('modal-sets',1)">+</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Reps</div>
+          <div class="stepper">
+            <button onclick="step('modal-reps',-1)">−</button>
+            <input type="number" id="modal-reps" min="0" max="99">
+            <button onclick="step('modal-reps',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Duration</div>
+          <input type="text" id="modal-duration" class="text-input" placeholder="e.g. 25 min">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Weight</div>
+          <input type="text" id="modal-weight" class="text-input" placeholder="e.g. 10 kg">
+        </div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Note</div>
+        <input type="text" id="modal-note" class="text-input" placeholder="Optional note…">
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="logModified()">Modified</button>
+        <button class="btn btn-green"   onclick="logDone()">✓ Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- PLAN EDIT MODAL -->
+<div class="modal-overlay" id="plan-modal" onclick="closeModal('plan-modal')">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2 id="plan-modal-title">Edit Exercise</h2>
+      <button class="modal-close" onclick="closeModal('plan-modal')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="field-group">
+        <div class="field-label">Exercise Name</div>
+        <input type="text" id="plan-ex-name" class="text-input" placeholder="Exercise name">
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Sets</div>
+          <div class="stepper">
+            <button onclick="step('plan-sets',-1)">−</button>
+            <input type="number" id="plan-sets" min="0" max="99">
+            <button onclick="step('plan-sets',1)">+</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Reps</div>
+          <div class="stepper">
+            <button onclick="step('plan-reps',-1)">−</button>
+            <input type="number" id="plan-reps" min="0" max="99">
+            <button onclick="step('plan-reps',1)">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Duration</div>
+          <input type="text" id="plan-duration" class="text-input" placeholder="e.g. 2 min">
+        </div>
+        <div class="field-group">
+          <div class="field-label">Weight</div>
+          <input type="text" id="plan-weight" class="text-input" placeholder="e.g. 10 kg">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="closeModal('plan-modal')">Cancel</button>
+        <button class="btn btn-primary"   onclick="savePlanEdit()">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script type="module" src="js/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+}
+</script>
+</body>
+</html>
