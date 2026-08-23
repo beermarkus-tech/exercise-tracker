@@ -989,9 +989,8 @@ function renderPlanScreen() {
     html += `<div class="plan-day-group"><div class="plan-day-label">${day}</div>`;
     ['Morning','Evening'].forEach(session => {
       const exs = session === 'Morning' ? dp.morning : dp.evening;
-      if (!exs || !exs.length) return;
       html += `<div class="plan-session-label">${session}</div>`;
-      exs.forEach(ex => {
+      (exs || []).forEach(ex => {
         html += `<div class="plan-exercise-row">
           <div class="plan-ex-name">${ex.exercise}</div>
           <div class="plan-ex-meta">${fmtTarget(ex)}</div>
