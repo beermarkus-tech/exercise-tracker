@@ -427,6 +427,14 @@ function upsertLocalLog(date, day, session, exercise, planned, fields) {
   }
 }
 
+// Recompute the dashboard (streak, per-exercise charts, consistency grid)
+// from the current log after every write, and re-render Progress in place
+// if it's the visible tab, so it never shows stale data from initial load.
+function refreshDashboard() {
+  appState.dashboard = buildDashboard(appState.log, appState.today);
+  if (activeTab === 'progress') renderProgress();
+}
+
 function quickDone(session, exercise) {
   const key     = session + '|' + exercise;
   const logged  = appState.sessionLog[key] || {};
@@ -453,6 +461,7 @@ function quickDone(session, exercise) {
   }
   renderToday();
   if (activeTab === 'history') renderHistory();
+  refreshDashboard();
 }
 
 // ── LOG MODAL ────────────────────────────────────────────────────────────────
@@ -511,6 +520,7 @@ function commitLog(status) {
   closeModal('log-modal');
   renderToday();
   if (activeTab === 'history') renderHistory();
+  refreshDashboard();
 }
 
 function logDone()     { commitLog('done'); }
@@ -705,8 +715,8 @@ function savePlanEdit() {
   if (mode === 'edit') {
     const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
     const ex  = arr.find(e => e.exercise === exercise);
-    if (ex) { ex.sets = sets; ex.reps = reps; ex.duration = dur; ex.weight = wt; }
-    trackWrite(updatePlan({ day, session, exercise, fields: { Sets: sets, Reps: reps, Duration: dur, Weight: wt } }));
+    if (ex) { ex.exercise = name; ex.sets = sets; ex.reps = reps; ex.duration = dur; ex.weight = wt; }
+    trackWrite(updatePlan({ day, session, exercise, fields: { Exercise: name, Sets: sets, Reps: reps, Duration: dur, Weight: wt } }));
   } else {
     const newEx = { exercise: name, session, sets, reps, duration: dur, weight: wt, order: 99 };
     const arr   = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
