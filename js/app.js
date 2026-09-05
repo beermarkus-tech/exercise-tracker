@@ -728,10 +728,8 @@ function deletePlanEx(day, session, exercise) {
 }
 
 // ── DATE PICKER — the date-btn label triggers the native picker directly ───────
-function applyDate() {
-  const val = document.getElementById('date-input').value;
-  if (!val) return;
-  currentDate = val;
+function goToDate(newDate) {
+  currentDate = newDate;
   appState.sessionLog = {};
   appState.log.forEach(row => {
     if (row.Date === currentDate) {
@@ -748,6 +746,37 @@ function applyDate() {
   });
   renderToday();
 }
+
+function applyDate() {
+  const val = document.getElementById('date-input').value;
+  if (!val) return;
+  goToDate(val);
+}
+
+// ── SWIPE NAV — horizontal swipe on the Today screen moves ±1 day ────────────
+function initSwipeNav() {
+  const el = document.getElementById('screen-today');
+  let startX = 0, startY = 0, tracking = false;
+
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    tracking = true;
+  }, { passive: true });
+
+  el.addEventListener('touchend', e => {
+    if (!tracking) return;
+    tracking = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    // Require a clearly horizontal, deliberate swipe so vertical scrolling
+    // and taps on checkboxes/buttons are never mistaken for a day change.
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    goToDate(dx < 0 ? nextDay(currentDate) : prevDay(currentDate));
+  }, { passive: true });
+}
+initSwipeNav();
 
 // ── MODAL HELPERS ─────────────────────────────────────────────────────────────
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
