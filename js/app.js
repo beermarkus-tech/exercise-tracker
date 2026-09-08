@@ -386,15 +386,15 @@ function exCard(ex, session) {
     ? fmtActual({ actualSets: logged.actualSets, actualReps: logged.actualReps, actualDuration: logged.actualDuration, actualWeight: logged.actualWeight })
     : '';
   return `<div class="exercise-card status-${s}">
-    <div class="exercise-row">
-      <div class="ex-check ${s}" onclick="quickDone('${session}','${esc(ex.exercise)}')">${checkSvg}</div>
+    <div class="exercise-row" onclick="quickDone('${session}','${esc(ex.exercise)}')">
+      <div class="ex-check ${s}">${checkSvg}</div>
       <div class="ex-info">
         <div class="ex-name">${ex.exercise}</div>
         <div class="ex-target">${fmtTarget(ex)}</div>
         ${actual ? `<div class="ex-actual">Done: ${actual}</div>` : ''}
         ${logged.note ? `<div class="ex-note">${logged.note}</div>` : ''}
       </div>
-      <button class="icon-btn" onclick="openLogModal('${session}','${esc(ex.exercise)}')">
+      <button class="icon-btn" onclick="event.stopPropagation(); openLogModal('${session}','${esc(ex.exercise)}')">
         <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
       </button>
     </div>
@@ -738,7 +738,9 @@ function deletePlanEx(day, session, exercise) {
 }
 
 // ── DATE PICKER — the date-btn label triggers the native picker directly ───────
-function goToDate(newDate) {
+// direction ('prev'|'next') plays a small slide-in animation on today-content,
+// matching the swipe gesture that triggered it; omitted for date-picker jumps.
+function goToDate(newDate, direction) {
   currentDate = newDate;
   appState.sessionLog = {};
   appState.log.forEach(row => {
@@ -755,6 +757,15 @@ function goToDate(newDate) {
     }
   });
   renderToday();
+  if (direction) animateDaySwipe(direction);
+}
+
+function animateDaySwipe(direction) {
+  const el = document.getElementById('today-content');
+  if (!el) return;
+  el.classList.remove('day-in-prev', 'day-in-next');
+  void el.offsetWidth; // restart the animation even if the same class was just used
+  el.classList.add(direction === 'next' ? 'day-in-next' : 'day-in-prev');
 }
 
 function applyDate() {
@@ -783,7 +794,8 @@ function initSwipeNav() {
     // Require a clearly horizontal, deliberate swipe so vertical scrolling
     // and taps on checkboxes/buttons are never mistaken for a day change.
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    goToDate(dx < 0 ? nextDay(currentDate) : prevDay(currentDate));
+    if (dx < 0) goToDate(nextDay(currentDate), 'next');
+    else        goToDate(prevDay(currentDate), 'prev');
   }, { passive: true });
 }
 initSwipeNav();

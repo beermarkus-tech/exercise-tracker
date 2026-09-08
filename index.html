@@ -61,6 +61,12 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
 /* ── SCREENS ── */
 .screen { display: none; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 12px); }
+
+/* ── DAY SWIPE ── */
+@keyframes day-in-from-left  { from { transform: translateX(-18px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes day-in-from-right { from { transform: translateX(18px);  opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+#today-content.day-in-prev { animation: day-in-from-left  0.22s ease-out; }
+#today-content.day-in-next { animation: day-in-from-right 0.22s ease-out; }
 .screen.active { display: block; }
 
 /* ── TOPBAR ── */
@@ -131,6 +137,7 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
 .exercise-row {
   display: flex; align-items: center; gap: 14px;
   padding: 16px 16px 16px 18px;
+  cursor: pointer; touch-action: manipulation;
 }
 
 .ex-check {
