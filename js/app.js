@@ -185,6 +185,33 @@ function removeLog(payload) {
   return deleteDoc(doc(db, 'log', logDocId(payload.date, payload.session, payload.exercise)));
 }
 
+// Renaming a plan exercise only touches the plan doc — log rows still carry
+// the old Exercise name, so every by-name lookup (today's ticked state,
+// history, the dashboard's per-exercise buckets) silently stops matching.
+// Move every loaded log row for this session+exercise onto the new name,
+// both locally and in Firestore (log docs are keyed by a slug of the name,
+// so renaming means moving to a new doc ID, not just updating a field).
+// Synthetic implicit-skip rows (no LoggedAt) exist only in appState.log and
+// have no Firestore doc to move.
+function renameLogExercise(session, oldExercise, newExercise) {
+  const oldKey = session + '|' + oldExercise;
+  const newKey = session + '|' + newExercise;
+  if (appState.sessionLog[oldKey]) {
+    appState.sessionLog[newKey] = appState.sessionLog[oldKey];
+    delete appState.sessionLog[oldKey];
+  }
+
+  appState.log.forEach(r => {
+    if (r.Session !== session || r.Exercise !== oldExercise) return;
+    r.Exercise = newExercise;
+    if (!r.LoggedAt) return;
+    const oldId = logDocId(r.Date, session, oldExercise);
+    const newId = logDocId(r.Date, session, newExercise);
+    if (oldId === newId) return;
+    trackWrite(setDoc(doc(db, 'log', newId), r).then(() => deleteDoc(doc(db, 'log', oldId))));
+  });
+}
+
 async function updatePlan(payload) {
   const rows    = appState.planRowsRaw;
   const dateIso = toIso(new Date());
@@ -715,6 +742,7 @@ function savePlanEdit() {
   if (mode === 'edit') {
     const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
     const ex  = arr.find(e => e.exercise === exercise);
+    if (name !== exercise) { renameLogExercise(session, exercise, name); refreshDashboard(); }
     if (ex) { ex.exercise = name; ex.sets = sets; ex.reps = reps; ex.duration = dur; ex.weight = wt; }
     trackWrite(updatePlan({ day, session, exercise, fields: { Exercise: name, Sets: sets, Reps: reps, Duration: dur, Weight: wt } }));
   } else {
@@ -725,6 +753,7 @@ function savePlanEdit() {
   }
   renderPlanScreen();
   if (activeTab === 'today') renderToday();
+  if (activeTab === 'history') renderHistory();
 }
 
 function deletePlanEx(day, session, exercise) {
