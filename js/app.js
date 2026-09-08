@@ -188,11 +188,13 @@ function removeLog(payload) {
 // Renaming a plan exercise only touches the plan doc — log rows still carry
 // the old Exercise name, so every by-name lookup (today's ticked state,
 // history, the dashboard's per-exercise buckets) silently stops matching.
-// Move every loaded log row for this session+exercise onto the new name,
-// both locally and in Firestore (log docs are keyed by a slug of the name,
-// so renaming means moving to a new doc ID, not just updating a field).
+// It's the same logged entry, just under a new name, so update the Exercise
+// field on each existing log doc in place — do not delete/recreate under a
+// new ID, that's reserved for genuinely new log entries. The doc's ID stays
+// derived from the old name; that's fine, IDs are only ever looked up by
+// date+session+exercise at write time, never read back out.
 // Synthetic implicit-skip rows (no LoggedAt) exist only in appState.log and
-// have no Firestore doc to move.
+// have no Firestore doc to touch.
 function renameLogExercise(session, oldExercise, newExercise) {
   const oldKey = session + '|' + oldExercise;
   const newKey = session + '|' + newExercise;
@@ -205,10 +207,8 @@ function renameLogExercise(session, oldExercise, newExercise) {
     if (r.Session !== session || r.Exercise !== oldExercise) return;
     r.Exercise = newExercise;
     if (!r.LoggedAt) return;
-    const oldId = logDocId(r.Date, session, oldExercise);
-    const newId = logDocId(r.Date, session, newExercise);
-    if (oldId === newId) return;
-    trackWrite(setDoc(doc(db, 'log', newId), r).then(() => deleteDoc(doc(db, 'log', oldId))));
+    const id = logDocId(r.Date, session, oldExercise);
+    trackWrite(updateDoc(doc(db, 'log', id), { Exercise: newExercise }));
   });
 }
 
