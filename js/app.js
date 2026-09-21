@@ -420,7 +420,7 @@ function exCard(ex, session) {
       <div class="ex-check ${s}">${checkSvg}</div>
       <div class="ex-info">
         <div class="ex-name">${ex.exercise}</div>
-        ${actual ? `<div class="ex-actual">Done: ${actual}</div>` : ''}
+        <div class="ex-actual">${actual ? `Done: ${actual}` : ''}</div>
         ${logged.note ? `<div class="ex-note">${logged.note}</div>` : ''}
       </div>
       <div class="ex-target-side">${fmtTarget(ex)}</div>
