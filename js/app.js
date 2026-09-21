@@ -308,6 +308,9 @@ function fmtActual(ex) {
 }
 
 function esc(s) { return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+// For values placed in a plain HTML attribute (e.g. data-exercise="..."),
+// not inside a JS string literal like esc() above is for.
+function escAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 let currentDate = toIso(new Date());
@@ -413,17 +416,14 @@ function exCard(ex, session) {
     ? fmtActual({ actualSets: logged.actualSets, actualReps: logged.actualReps, actualDuration: logged.actualDuration, actualWeight: logged.actualWeight })
     : '';
   return `<div class="exercise-card status-${s}">
-    <div class="exercise-row" onclick="quickDone('${session}','${esc(ex.exercise)}')">
+    <div class="exercise-row" data-session="${session}" data-exercise="${escAttr(ex.exercise)}">
       <div class="ex-check ${s}">${checkSvg}</div>
       <div class="ex-info">
         <div class="ex-name">${ex.exercise}</div>
-        <div class="ex-target">${fmtTarget(ex)}</div>
         ${actual ? `<div class="ex-actual">Done: ${actual}</div>` : ''}
         ${logged.note ? `<div class="ex-note">${logged.note}</div>` : ''}
       </div>
-      <button class="icon-btn" onclick="event.stopPropagation(); openLogModal('${session}','${esc(ex.exercise)}')">
-        <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-      </button>
+      <div class="ex-target-side">${fmtTarget(ex)}</div>
     </div>
   </div>`;
 }
@@ -828,6 +828,54 @@ function initSwipeNav() {
   }, { passive: true });
 }
 initSwipeNav();
+
+// ── EXERCISE ROW GESTURES — tap toggles done, long-press opens the log modal ──
+// Delegated on the stable #today-content container rather than bound per row,
+// since renderToday() replaces the rows' HTML (and any listeners on them) on
+// every re-render.
+function initExerciseRowGestures() {
+  const el = document.getElementById('today-content');
+  const LONG_PRESS_MS = 500;
+  let timer = null, startX = 0, startY = 0, longPressed = false;
+
+  function cancelTimer() { clearTimeout(timer); timer = null; }
+
+  el.addEventListener('touchstart', e => {
+    const row = e.target.closest('.exercise-row');
+    if (!row || e.touches.length !== 1) return;
+    longPressed = false;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      longPressed = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      openLogModal(row.dataset.session, row.dataset.exercise);
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+
+  // Cancel the pending long-press once the touch drifts enough to look like
+  // a scroll or the swipe-day gesture rather than a deliberate hold.
+  el.addEventListener('touchmove', e => {
+    if (!timer) return;
+    const dx = Math.abs(e.touches[0].clientX - startX);
+    const dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > 10 || dy > 10) cancelTimer();
+  }, { passive: true });
+
+  el.addEventListener('touchend', cancelTimer, { passive: true });
+  el.addEventListener('touchcancel', cancelTimer, { passive: true });
+
+  el.addEventListener('click', e => {
+    const row = e.target.closest('.exercise-row');
+    if (!row) return;
+    // The long-press already acted; swallow the click that follows touchend
+    // so it doesn't also toggle done/pending.
+    if (longPressed) { longPressed = false; return; }
+    quickDone(row.dataset.session, row.dataset.exercise);
+  });
+}
+initExerciseRowGestures();
 
 // ── MODAL HELPERS ─────────────────────────────────────────────────────────────
 function openModal(id)  { document.getElementById(id).classList.add('open'); }
