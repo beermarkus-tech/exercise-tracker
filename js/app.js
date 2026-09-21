@@ -1,4 +1,5 @@
 import { firebaseConfig } from './firebase-config.js';
+import { BUILD } from './build.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
   getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, setDoc, doc, query, where
@@ -6,6 +7,8 @@ import {
 
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
+
+document.getElementById('build-number').textContent = 'Build ' + BUILD;
 
 // ── APP STATE ────────────────────────────────────────────────────────────────
 const appState = {
