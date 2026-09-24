@@ -42,8 +42,24 @@ const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sun
 // ── PLAN RESOLUTION (ported from Code.js) ─────────────────────────────────────
 // For a given day-of-week, the exercises active as of a specific date —
 // i.e. the latest plan version per exercise with ValidFrom <= dateIso.
-function resolveDayPlan(day, dateIso, planRows) {
-  const dayRows = planRows.filter(r => r.Active === true && r.Day === day && r.ValidFrom <= dateIso);
+//
+// historical=true additionally considers versions that have since been
+// superseded/deactivated (Active=false). Deactivation always takes effect
+// "today" (updatePlan/removeExercise never backdate it), so for any date
+// strictly before today, the version that was actually in effect back then
+// is still the correct one — picking the highest ValidFrom<=dateIso among
+// ALL versions already finds it correctly, Active or not. Only "today or
+// later" resolution (the live weekly template, and logging today/future)
+// should respect Active, since that's what makes an edit or removal
+// actually take hold going forward. Without this distinction, editing an
+// exercise retroactively "orphans" every past day's auto-crossed-out
+// (unticked) instance of it — resolveDayPlan finds nothing for its own,
+// now-deactivated version, so it falls through to showing the live/edited
+// one instead of what was actually planned back then.
+function resolveDayPlan(day, dateIso, planRows, historical) {
+  const dayRows = planRows.filter(r =>
+    (historical || r.Active === true) && r.Day === day && r.ValidFrom <= dateIso
+  );
   const byExercise = {};
   dayRows.forEach(r => {
     if (!byExercise[r.Exercise] || r.ValidFrom > byExercise[r.Exercise].ValidFrom) {
@@ -61,7 +77,7 @@ function fillSkippedEntries(logRows, planRows, cutoff, today) {
   const synthetic = [];
   for (let d = cutoff; d < today; d = nextDay(d)) {
     const day = getDateDayName(d);
-    resolveDayPlan(day, d, planRows).forEach(r => {
+    resolveDayPlan(day, d, planRows, true).forEach(r => {
       const key = d + '|' + r.Session + '|' + r.Exercise;
       if (logged.has(key)) return;
       synthetic.push({
@@ -163,8 +179,13 @@ async function loadAll() {
 
 async function logExercise(payload) {
   const dateIso = payload.date;
+  // Same historical-vs-live distinction as resolveDayPlan(): logging/editing
+  // a past date (e.g. fixing a History entry) should snapshot what was
+  // actually planned back then, not get orphaned by a later edit that
+  // deactivated that version.
+  const historical = dateIso < appState.today;
   const planRow = appState.planRowsRaw.filter(r =>
-    r.Active === true && r.Day === payload.day && r.Session === payload.session &&
+    (historical || r.Active === true) && r.Day === payload.day && r.Session === payload.session &&
     r.Exercise === payload.exercise && r.ValidFrom <= dateIso
   ).sort((a,b) => b.ValidFrom.localeCompare(a.ValidFrom))[0] || {};
 
