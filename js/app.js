@@ -318,26 +318,41 @@ function escAttr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&qu
 // ── INIT ─────────────────────────────────────────────────────────────────────
 let currentDate = toIso(new Date());
 
+// A logged (done/modified/skipped) exercise freezes its displayed target to
+// whatever was actually planned at the moment it was logged (PlannedSets
+// etc., already snapshotted on the log row) rather than the live plan, so
+// editing the plan later doesn't retroactively change what an already-
+// resolved exercise appears to have asked of you. Only a still-pending
+// exercise keeps reading the live plan, which is what makes plan edits
+// show up immediately for today/future's unchecked exercises.
+function hydrateSessionLog(dateIso) {
+  const sessionLog = {};
+  appState.log.forEach(row => {
+    if (row.Date !== dateIso) return;
+    const key = row.Session + '|' + row.Exercise;
+    sessionLog[key] = {
+      status:          row.Status,
+      actualSets:      row.ActualSets,
+      actualReps:      row.ActualReps,
+      actualDuration:  row.ActualDuration,
+      actualWeight:    row.ActualWeight,
+      plannedSets:     row.PlannedSets,
+      plannedReps:     row.PlannedReps,
+      plannedDuration: row.PlannedDuration,
+      plannedWeight:   row.PlannedWeight,
+      note:            row.Note
+    };
+  });
+  return sessionLog;
+}
+
 function initApp(data) {
   appState.plan      = data.plan;
   appState.log       = data.log;
   appState.dashboard = data.dashboard;
   appState.today     = data.today;
   appState.dayName   = data.dayName;
-
-  appState.log.forEach(row => {
-    if (row.Date === currentDate) {
-      const key = row.Session + '|' + row.Exercise;
-      appState.sessionLog[key] = {
-        status:         row.Status,
-        actualSets:     row.ActualSets,
-        actualReps:     row.ActualReps,
-        actualDuration: row.ActualDuration,
-        actualWeight:   row.ActualWeight,
-        note:           row.Note
-      };
-    }
-  });
+  appState.sessionLog = hydrateSessionLog(currentDate);
 
   document.getElementById('loading-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
@@ -418,6 +433,12 @@ function exCard(ex, session) {
   const actual = logged.actualSets || logged.actualReps || logged.actualDuration || logged.actualWeight
     ? fmtActual({ actualSets: logged.actualSets, actualReps: logged.actualReps, actualDuration: logged.actualDuration, actualWeight: logged.actualWeight })
     : '';
+  // Once an exercise is logged, its target freezes to what was actually
+  // planned at that moment (so a later plan edit doesn't rewrite history);
+  // a still-pending exercise keeps showing the live plan.
+  const target = s === 'pending'
+    ? fmtTarget(ex)
+    : fmtTarget({ sets: logged.plannedSets, reps: logged.plannedReps, duration: logged.plannedDuration, weight: logged.plannedWeight });
   return `<div class="exercise-card status-${s}">
     <div class="exercise-row" data-session="${session}" data-exercise="${escAttr(ex.exercise)}">
       <div class="ex-check ${s}">${checkSvg}</div>
@@ -426,7 +447,7 @@ function exCard(ex, session) {
         <div class="ex-actual">${actual ? `Done: ${actual}` : ''}</div>
         ${logged.note ? `<div class="ex-note">${logged.note}</div>` : ''}
       </div>
-      <div class="ex-target-side">${fmtTarget(ex)}</div>
+      <div class="ex-target-side">${target}</div>
     </div>
   </div>`;
 }
@@ -484,7 +505,9 @@ function quickDone(session, exercise) {
     trackWrite(removeLog({ date: currentDate, session, exercise }));
   } else {
     const fields = { status: 'done', actualSets: ex.sets, actualReps: ex.reps,
-      actualDuration: ex.duration, actualWeight: ex.weight, note: '' };
+      actualDuration: ex.duration, actualWeight: ex.weight,
+      plannedSets: ex.sets, plannedReps: ex.reps, plannedDuration: ex.duration, plannedWeight: ex.weight,
+      note: '' };
     appState.sessionLog[key] = fields;
     upsertLocalLog(currentDate, dayName, session, exercise, ex, fields);
     trackWrite(logExercise({ date: currentDate, day: dayName, session, exercise, ...fields }));
@@ -540,7 +563,9 @@ function commitLog(status) {
   const wt   = document.getElementById('modal-weight').value;
   const note = document.getElementById('modal-note').value;
 
-  const fields = { status, actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt, note };
+  const fields = { status, actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt,
+    plannedSets: planned.sets, plannedReps: planned.reps, plannedDuration: planned.duration, plannedWeight: planned.weight,
+    note };
 
   if (date === currentDate) appState.sessionLog[key] = fields;
   upsertLocalLog(date, day, session, exercise, planned, fields);
@@ -774,20 +799,7 @@ function deletePlanEx(day, session, exercise) {
 // matching the swipe gesture that triggered it; omitted for date-picker jumps.
 function goToDate(newDate, direction) {
   currentDate = newDate;
-  appState.sessionLog = {};
-  appState.log.forEach(row => {
-    if (row.Date === currentDate) {
-      const key = row.Session + '|' + row.Exercise;
-      appState.sessionLog[key] = {
-        status:         row.Status,
-        actualSets:     row.ActualSets,
-        actualReps:     row.ActualReps,
-        actualDuration: row.ActualDuration,
-        actualWeight:   row.ActualWeight,
-        note:           row.Note
-      };
-    }
-  });
+  appState.sessionLog = hydrateSessionLog(currentDate);
   renderToday();
   if (direction) animateDaySwipe(direction);
 }
