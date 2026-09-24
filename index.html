@@ -297,26 +297,34 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
   font-family: inherit;
 }
 
-/* ── PLAN EDITOR ── */
-.plan-day-group { margin: 0 16px; padding-bottom: 4px; }
-.plan-day-label { font-size: 20px; font-weight: 700; color: var(--text); padding: 20px 4px 10px; letter-spacing: -0.3px; }
+/* ── PLAN EDITOR (grid: one row per exercise, chips for the 7 weekdays) ── */
 .plan-session-label { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 0 6px; }
-.plan-exercise-row {
-  display: flex; align-items: center; gap: 10px;
-  padding: 13px 14px; background: var(--bg2); border-radius: var(--radius-sm);
-  margin-bottom: 6px;
+.plan-grid-row {
+  margin: 0 16px 8px; padding: 12px 14px; background: var(--bg2); border-radius: var(--radius-sm);
 }
-.plan-ex-name { flex: 1; font-size: 15px; font-weight: 500; }
-.plan-ex-meta { font-size: 13px; color: var(--text3); white-space: nowrap; }
-.plan-edit-btn, .plan-del-btn { background: none; border: none; cursor: pointer; padding: 6px; touch-action: manipulation; }
-.plan-edit-btn svg, .plan-del-btn svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.plan-edit-btn { color: var(--blue); }
-.plan-del-btn  { color: var(--red); }
+.plan-grid-header { padding-bottom: 10px; cursor: pointer; touch-action: manipulation; }
+.plan-grid-name { font-size: 15px; font-weight: 600; }
+.plan-grid-meta { font-size: 13px; color: var(--text3); margin-top: 2px; }
+.plan-grid-days { display: flex; align-items: center; gap: 6px; }
+.plan-grid-days .day-chip-row { flex: 1; min-width: 0; }
+.day-chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.day-chip {
+  flex: 1; min-width: 0; padding: 7px 0; border: 1.5px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--text3); font-size: 11px; font-weight: 600;
+  font-family: inherit; cursor: pointer; touch-action: manipulation;
+}
+.day-chip.checked { background: var(--blue); border-color: var(--blue); color: white; }
+.plan-grid-del {
+  flex-shrink: 0; background: none; border: none; cursor: pointer; padding: 6px 0 6px 4px;
+  color: var(--red); touch-action: manipulation;
+}
+.plan-grid-del svg { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .add-exercise-btn {
   display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+  margin: 0 16px 8px; width: calc(100% - 32px);
   padding: 13px; background: none; border: 1.5px dashed var(--border);
   border-radius: var(--radius-sm); color: var(--blue); cursor: pointer;
-  font-size: 15px; font-weight: 500; margin-bottom: 6px; font-family: inherit;
+  font-size: 15px; font-weight: 500; font-family: inherit;
   touch-action: manipulation;
 }
 
@@ -489,6 +497,18 @@ input[type="date"] {
         <div class="field-group">
           <div class="field-label">Weight</div>
           <input type="text" id="plan-weight" class="text-input" placeholder="e.g. 10 kg">
+        </div>
+      </div>
+      <div class="field-group" id="plan-modal-days-group">
+        <div class="field-label">Days</div>
+        <div class="day-chip-row" id="plan-modal-days">
+          <button type="button" class="day-chip" data-day="Monday"    onclick="this.classList.toggle('checked')">Mo</button>
+          <button type="button" class="day-chip" data-day="Tuesday"   onclick="this.classList.toggle('checked')">Tu</button>
+          <button type="button" class="day-chip" data-day="Wednesday" onclick="this.classList.toggle('checked')">We</button>
+          <button type="button" class="day-chip" data-day="Thursday"  onclick="this.classList.toggle('checked')">Th</button>
+          <button type="button" class="day-chip" data-day="Friday"    onclick="this.classList.toggle('checked')">Fr</button>
+          <button type="button" class="day-chip" data-day="Saturday"  onclick="this.classList.toggle('checked')">Sa</button>
+          <button type="button" class="day-chip" data-day="Sunday"    onclick="this.classList.toggle('checked')">Su</button>
         </div>
       </div>
       <div class="btn-row">

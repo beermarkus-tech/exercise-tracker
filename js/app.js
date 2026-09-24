@@ -232,17 +232,25 @@ async function updatePlan(payload) {
   rows.push({ id: ref.id, ...updated });
 }
 
+// payload.order lets a caller pin the row to a specific position (e.g. the
+// plan grid re-adding an exercise to a day it was previously unchecked from,
+// or adding one new exercise across several days at once) so its order
+// stays in sync across every day instead of drifting to "last" on each one
+// independently. Omit it to auto-append (existing single-day add behavior).
 async function addExercise(payload) {
   const rows = appState.planRowsRaw;
   const dateIso = toIso(new Date());
   const maxVer = Math.max(...rows.map(r => +r.Version || 0), 0);
-  const sessRows = rows.filter(r => r.Active === true && r.Day === payload.day && r.Session === payload.session);
-  const maxOrder = Math.max(...sessRows.map(r => +r.Order || 0), 0);
+  let order = payload.order;
+  if (order === undefined || order === null || order === '') {
+    const sessRows = rows.filter(r => r.Active === true && r.Day === payload.day && r.Session === payload.session);
+    order = Math.max(...sessRows.map(r => +r.Order || 0), 0) + 1;
+  }
   const newRow = {
     Version: String(maxVer + 1), ValidFrom: dateIso, Day: payload.day, Session: payload.session,
     Exercise: payload.exercise, Sets: payload.sets || '', Reps: payload.reps || '',
     Duration: payload.duration || '', Weight: payload.weight || '',
-    Order: String(maxOrder + 1), Active: true
+    Order: String(order), Active: true
   };
   const ref = await addDoc(collection(db, 'plan'), newRow);
   rows.push({ id: ref.id, ...newRow });
@@ -700,54 +708,114 @@ function renderPvaChart() {
 }
 
 // ── PLAN SCREEN ───────────────────────────────────────────────────────────────
+// A "row" is one exercise within a session, shown once regardless of how
+// many of the 7 weekdays it's scheduled on. Its sets/reps/duration/weight
+// are a single shared definition (mirroring how this plan is actually used
+// in practice — the same exercise at the same values on every day it's
+// scheduled), taken from whichever day happens to be checked first; editing
+// it applies to every currently-checked day at once.
+const DAY_ABBR = { Monday:'Mo', Tuesday:'Tu', Wednesday:'We', Thursday:'Th', Friday:'Fr', Saturday:'Sa', Sunday:'Su' };
 let editingPlan = null;
+
+function planArr(day, session) {
+  const dp = appState.plan[day];
+  return dp ? (session === 'Morning' ? dp.morning : dp.evening) : null;
+}
+
+function buildPlanGrid(session) {
+  const rows = new Map(); // exercise name -> row
+  DAYS.forEach(day => {
+    (planArr(day, session) || []).forEach(ex => {
+      if (!rows.has(ex.exercise)) {
+        rows.set(ex.exercise, { exercise: ex.exercise, sets: ex.sets, reps: ex.reps, duration: ex.duration, weight: ex.weight, order: ex.order, days: new Set() });
+      }
+      rows.get(ex.exercise).days.add(day);
+    });
+  });
+  return [...rows.values()].sort((a, b) => (+a.order || 0) - (+b.order || 0));
+}
+
+function findCanonicalExercise(session, exercise) {
+  for (const day of DAYS) {
+    const found = (planArr(day, session) || []).find(e => e.exercise === exercise);
+    if (found) return found;
+  }
+  return null;
+}
+
+function getCheckedDays(session, exercise) {
+  return DAYS.filter(day => (planArr(day, session) || []).some(e => e.exercise === exercise));
+}
+
+function nextPlanOrder(session) {
+  let max = 0;
+  DAYS.forEach(day => (planArr(day, session) || []).forEach(e => { max = Math.max(max, +e.order || 0); }));
+  return max + 1;
+}
 
 function renderPlanScreen() {
   let html = '<div style="padding-bottom:12px;">';
-  DAYS.forEach(day => {
-    const dp = appState.plan[day];
-    if (!dp) return;
-    html += `<div class="plan-day-group"><div class="plan-day-label">${day}</div>`;
-    ['Morning','Evening'].forEach(session => {
-      const exs = session === 'Morning' ? dp.morning : dp.evening;
-      html += `<div class="plan-session-label">${session}</div>`;
-      (exs || []).forEach(ex => {
-        html += `<div class="plan-exercise-row">
-          <div class="plan-ex-name">${ex.exercise}</div>
-          <div class="plan-ex-meta">${fmtTarget(ex)}</div>
-          <button class="plan-edit-btn" onclick="openPlanEdit('${esc(day)}','${session}','${esc(ex.exercise)}')">
-            <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </button>
-          <button class="plan-del-btn" onclick="deletePlanEx('${esc(day)}','${session}','${esc(ex.exercise)}')">
+  ['Morning', 'Evening'].forEach(session => {
+    html += `<div class="plan-session-label" style="margin:0 16px;">${session}</div>`;
+    buildPlanGrid(session).forEach(row => {
+      html += `<div class="plan-grid-row">
+        <div class="plan-grid-header" data-session="${session}" data-exercise="${escAttr(row.exercise)}">
+          <div class="plan-grid-name">${row.exercise}</div>
+          <div class="plan-grid-meta">${fmtTarget(row)}</div>
+        </div>
+        <div class="plan-grid-days">
+          <div class="day-chip-row">
+            ${DAYS.map(day => `<button type="button" class="day-chip${row.days.has(day) ? ' checked' : ''}" onclick="togglePlanDay('${session}','${esc(row.exercise)}','${day}')">${DAY_ABBR[day]}</button>`).join('')}
+          </div>
+          <button class="plan-grid-del" onclick="deletePlanExGrid('${session}','${esc(row.exercise)}')">
             <svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
           </button>
-        </div>`;
-      });
-      html += `<button class="add-exercise-btn" onclick="openPlanAdd('${esc(day)}','${session}')">+ Add exercise</button>`;
+        </div>
+      </div>`;
     });
-    html += '</div>';
+    html += `<button class="add-exercise-btn" onclick="openPlanAdd('${session}')">+ Add exercise</button>`;
   });
   html += '</div>';
   document.getElementById('plan-content').innerHTML = html;
 }
 
-function openPlanEdit(day, session, exercise) {
-  const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
-  const ex  = arr.find(e => e.exercise === exercise);
-  if (!ex) return;
-  editingPlan = { mode:'edit', day, session, exercise };
+function togglePlanDay(session, exercise, day) {
+  const arr = planArr(day, session);
+  if (!arr) return;
+  const idx = arr.findIndex(e => e.exercise === exercise);
+  if (idx >= 0) {
+    arr.splice(idx, 1);
+    trackWrite(removeExercise({ day, session, exercise }));
+  } else {
+    const canon = findCanonicalExercise(session, exercise);
+    if (!canon) return;
+    const payload = { day, session, exercise, sets: canon.sets, reps: canon.reps, duration: canon.duration, weight: canon.weight, order: canon.order };
+    arr.push({ exercise, session, sets: canon.sets, reps: canon.reps, duration: canon.duration, weight: canon.weight, order: canon.order });
+    trackWrite(addExercise(payload));
+  }
+  renderPlanScreen();
+  if (activeTab === 'today') renderToday();
+}
+
+function openPlanEditGrid(session, exercise) {
+  const canon = findCanonicalExercise(session, exercise);
+  if (!canon) return;
+  editingPlan = { mode: 'edit', session, exercise, days: getCheckedDays(session, exercise) };
   document.getElementById('plan-modal-title').textContent = 'Edit Exercise';
-  document.getElementById('plan-ex-name').value  = ex.exercise;
-  document.getElementById('plan-sets').value     = ex.sets     || 0;
-  document.getElementById('plan-reps').value     = ex.reps     || 0;
-  document.getElementById('plan-duration').value = ex.duration || '';
-  document.getElementById('plan-weight').value   = ex.weight   || '';
+  document.getElementById('plan-modal-days-group').style.display = 'none';
+  document.getElementById('plan-ex-name').value  = canon.exercise;
+  document.getElementById('plan-sets').value     = canon.sets     || 0;
+  document.getElementById('plan-reps').value     = canon.reps     || 0;
+  document.getElementById('plan-duration').value = canon.duration || '';
+  document.getElementById('plan-weight').value   = canon.weight   || '';
   openModal('plan-modal');
 }
 
-function openPlanAdd(day, session) {
-  editingPlan = { mode:'add', day, session };
+function openPlanAdd(session) {
+  editingPlan = { mode: 'add', session };
   document.getElementById('plan-modal-title').textContent = 'Add Exercise';
+  document.getElementById('plan-modal-days-group').style.display = '';
+  document.querySelectorAll('#plan-modal-days .day-chip').forEach(c => c.classList.remove('checked'));
   document.getElementById('plan-ex-name').value  = '';
   document.getElementById('plan-sets').value     = 3;
   document.getElementById('plan-reps').value     = 10;
@@ -763,36 +831,79 @@ function savePlanEdit() {
   const reps = document.getElementById('plan-reps').value;
   const dur  = document.getElementById('plan-duration').value;
   const wt   = document.getElementById('plan-weight').value;
-  const { mode, day, session, exercise } = editingPlan;
+  const { mode, session } = editingPlan;
 
   closeModal('plan-modal');
 
   if (mode === 'edit') {
-    const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
-    const ex  = arr.find(e => e.exercise === exercise);
+    const { exercise, days } = editingPlan;
     if (name !== exercise) { renameLogExercise(session, exercise, name); refreshDashboard(); }
-    if (ex) { ex.exercise = name; ex.sets = sets; ex.reps = reps; ex.duration = dur; ex.weight = wt; }
-    trackWrite(updatePlan({ day, session, exercise, fields: { Exercise: name, Sets: sets, Reps: reps, Duration: dur, Weight: wt } }));
+    days.forEach(day => {
+      const arr = planArr(day, session);
+      const ex  = arr && arr.find(e => e.exercise === exercise);
+      if (ex) { ex.exercise = name; ex.sets = sets; ex.reps = reps; ex.duration = dur; ex.weight = wt; }
+      trackWrite(updatePlan({ day, session, exercise, fields: { Exercise: name, Sets: sets, Reps: reps, Duration: dur, Weight: wt } }));
+    });
   } else {
-    const newEx = { exercise: name, session, sets, reps, duration: dur, weight: wt, order: 99 };
-    const arr   = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
-    arr.push(newEx);
-    trackWrite(addExercise({ day, session, exercise: name, sets, reps, duration: dur, weight: wt }));
+    const days = [...document.querySelectorAll('#plan-modal-days .day-chip.checked')].map(c => c.dataset.day);
+    if (!days.length) return;
+    const order = nextPlanOrder(session);
+    days.forEach(day => {
+      const arr = planArr(day, session);
+      if (arr) arr.push({ exercise: name, session, sets, reps, duration: dur, weight: wt, order });
+      trackWrite(addExercise({ day, session, exercise: name, sets, reps, duration: dur, weight: wt, order }));
+    });
   }
   renderPlanScreen();
   if (activeTab === 'today') renderToday();
   if (activeTab === 'history') renderHistory();
 }
 
-function deletePlanEx(day, session, exercise) {
-  if (!confirm('Remove "' + exercise + '" from ' + day + ' ' + session + '?')) return;
-  const arr = session === 'Morning' ? appState.plan[day].morning : appState.plan[day].evening;
-  const idx = arr.findIndex(e => e.exercise === exercise);
-  if (idx >= 0) arr.splice(idx, 1);
-  trackWrite(removeExercise({ day, session, exercise }));
+function deletePlanExGrid(session, exercise) {
+  if (!confirm('Remove "' + exercise + '" from every scheduled day?')) return;
+  getCheckedDays(session, exercise).forEach(day => {
+    const arr = planArr(day, session);
+    const idx = arr ? arr.findIndex(e => e.exercise === exercise) : -1;
+    if (idx >= 0) arr.splice(idx, 1);
+    trackWrite(removeExercise({ day, session, exercise }));
+  });
   renderPlanScreen();
   if (activeTab === 'today') renderToday();
 }
+
+// Long-press on a row's name/meta (not its day chips or delete button, which
+// are plain taps) opens the edit modal — same pattern as the Today screen's
+// exercise rows.
+function initPlanRowGestures() {
+  const el = document.getElementById('plan-content');
+  const LONG_PRESS_MS = 500;
+  let timer = null, startX = 0, startY = 0;
+
+  function cancelTimer() { clearTimeout(timer); timer = null; }
+
+  el.addEventListener('touchstart', e => {
+    const header = e.target.closest('.plan-grid-header');
+    if (!header || e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    timer = setTimeout(() => {
+      timer = null;
+      if (navigator.vibrate) navigator.vibrate(12);
+      openPlanEditGrid(header.dataset.session, header.dataset.exercise);
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+
+  el.addEventListener('touchmove', e => {
+    if (!timer) return;
+    const dx = Math.abs(e.touches[0].clientX - startX);
+    const dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > 10 || dy > 10) cancelTimer();
+  }, { passive: true });
+
+  el.addEventListener('touchend', cancelTimer, { passive: true });
+  el.addEventListener('touchcancel', cancelTimer, { passive: true });
+}
+initPlanRowGestures();
 
 // ── DATE PICKER — the date-btn label triggers the native picker directly ───────
 // direction ('prev'|'next') plays a small slide-in animation on today-content,
@@ -902,6 +1013,6 @@ function step(id, d)    { const el = document.getElementById(id); el.value = Mat
 Object.assign(window, {
   switchTab, applyDate, closeModal, step,
   quickDone, openLogModal, openHistoryLogModal, logDone, logModified,
-  openPlanEdit, openPlanAdd, savePlanEdit, deletePlanEx,
+  openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid,
   renderExChart, renderPvaChart
 });
