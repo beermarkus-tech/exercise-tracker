@@ -4,9 +4,13 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/fireba
 import {
   getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, setDoc, doc, query, where
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import {
+  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect
+} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
+const auth = getAuth(fbApp);
 
 document.getElementById('build-number').textContent = 'Build ' + BUILD;
 
@@ -391,9 +395,49 @@ function initApp(data) {
   renderToday();
 }
 
-loadAll().then(initApp).catch(err => {
-  document.querySelector('#loading-screen p').textContent = 'Error loading data. Please reload.';
-  console.error(err);
+// Firestore rules only admit the owner's Google account, so nothing can be
+// read until sign-in completes. Auth persists in IndexedDB, so this is a
+// one-time step per device; afterwards onAuthStateChanged fires straight away.
+function showLoadingMessage(text) {
+  document.querySelector('#loading-screen p').textContent = text;
+}
+
+async function signIn() {
+  const provider = new GoogleAuthProvider();
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (err) {
+    // Popups can be blocked (notably in installed PWAs) — fall back to a
+    // full-page redirect, which onAuthStateChanged picks up on return.
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
+      return signInWithRedirect(auth, provider);
+    }
+    if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
+      showLoadingMessage('Sign-in failed: ' + (err.code || err.message));
+      console.error(err);
+    }
+  }
+}
+document.getElementById('sign-in-btn').addEventListener('click', signIn);
+
+let started = false;
+onAuthStateChanged(auth, user => {
+  const screen = document.getElementById('loading-screen');
+  if (!user) {
+    screen.classList.add('signed-out');
+    showLoadingMessage('Sign in to load your plan.');
+    return;
+  }
+  screen.classList.remove('signed-out');
+  if (started) return;
+  started = true;
+  showLoadingMessage('Loading your plan…');
+  loadAll().then(initApp).catch(err => {
+    showLoadingMessage(err.code === 'permission-denied'
+      ? 'This account (' + user.email + ') has no access.'
+      : 'Error loading data. Please reload.');
+    console.error(err);
+  });
 });
 
 // ── TABS ─────────────────────────────────────────────────────────────────────
