@@ -44,25 +44,34 @@ function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return t
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 
 // ── PLAN RESOLUTION (ported from Code.js) ─────────────────────────────────────
-// For a given day-of-week, the exercises active as of a specific date —
-// i.e. the latest plan version per exercise with ValidFrom <= dateIso.
+// For a given day-of-week, the exercises in effect on a specific date.
 //
-// historical=true additionally considers versions that have since been
-// superseded/deactivated (Active=false). Deactivation always takes effect
-// "today" (updatePlan/removeExercise never backdate it), so for any date
-// strictly before today, the version that was actually in effect back then
-// is still the correct one — picking the highest ValidFrom<=dateIso among
-// ALL versions already finds it correctly, Active or not. Only "today or
-// later" resolution (the live weekly template, and logging today/future)
-// should respect Active, since that's what makes an edit or removal
-// actually take hold going forward. Without this distinction, editing an
-// exercise retroactively "orphans" every past day's auto-crossed-out
-// (unticked) instance of it — resolveDayPlan finds nothing for its own,
-// now-deactivated version, so it falls through to showing the live/edited
-// one instead of what was actually planned back then.
+// Live resolution (historical falsy — the weekly template, logging today or
+// later) only considers Active versions: that's what makes an edit or removal
+// take hold going forward.
+//
+// Historical resolution (past dates) asks which version was actually in
+// effect back then: a version runs from its ValidFrom until
+//   - its ValidTo, stamped when it was deactivated (edit or removal), or
+//   - for older docs with no ValidTo: the ValidFrom of the next version of
+//     the same day/session/exercise (it was superseded by an edit), or
+//   - never, if it's inactive with no successor — a removal from before
+//     ValidTo existed, whose date is unknown. Counting it as planned on every
+//     past date would invent skips (e.g. Sundays that were never planned).
+function versionEnd(r, planRows) {
+  if (r.Active === true) return '9999-12-31';
+  if (r.ValidTo) return r.ValidTo;
+  const next = planRows
+    .filter(s => s !== r && s.Day === r.Day && s.Session === r.Session && s.Exercise === r.Exercise &&
+                 (+s.Version || 0) > (+r.Version || 0))
+    .sort((a, b) => a.ValidFrom.localeCompare(b.ValidFrom))[0];
+  return next ? next.ValidFrom : r.ValidFrom;
+}
+
 function resolveDayPlan(day, dateIso, planRows, historical) {
   const dayRows = planRows.filter(r =>
-    (historical || r.Active === true) && r.Day === day && r.ValidFrom <= dateIso
+    r.Day === day && r.ValidFrom <= dateIso &&
+    (historical ? dateIso < versionEnd(r, planRows) : r.Active === true)
   );
   const byExercise = {};
   dayRows.forEach(r => {
@@ -252,11 +261,13 @@ async function updatePlan(payload) {
   if (!current) return;
 
   const maxVersion = Math.max(...rows.map(r => +r.Version || 0));
-  await updateDoc(doc(db, 'plan', current.id), { Active: false });
+  await updateDoc(doc(db, 'plan', current.id), { Active: false, ValidTo: dateIso });
   current.Active = false;
+  current.ValidTo = dateIso;
 
   const updated = { ...current };
   delete updated.id;
+  delete updated.ValidTo;
   Object.assign(updated, payload.fields, { Version: String(maxVersion + 1), ValidFrom: dateIso, Active: true });
   const ref = await addDoc(collection(db, 'plan'), updated);
   rows.push({ id: ref.id, ...updated });
@@ -290,8 +301,10 @@ async function removeExercise(payload) {
   const rows = appState.planRowsRaw;
   const current = rows.find(r => r.Active === true && r.Day === payload.day && r.Session === payload.session && r.Exercise === payload.exercise);
   if (!current) return;
-  await updateDoc(doc(db, 'plan', current.id), { Active: false });
+  const dateIso = toIso(new Date());
+  await updateDoc(doc(db, 'plan', current.id), { Active: false, ValidTo: dateIso });
   current.Active = false;
+  current.ValidTo = dateIso;
 }
 
 // ── PENDING-WRITE INDICATOR — spinner while any Firestore write is in flight ──
