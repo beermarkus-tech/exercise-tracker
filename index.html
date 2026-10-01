@@ -249,6 +249,10 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
 }
 .text-input:focus { border-color: var(--blue); }
 
+.seg { display: flex; background: var(--bg3); border-radius: var(--radius-sm); padding: 3px; gap: 3px; }
+.seg-btn { flex: 1; padding: 10px 8px; border: none; border-radius: 8px; background: transparent; color: var(--text2); font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer; }
+.seg-btn.active { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+
 .btn-row { display: flex; gap: 10px; margin-top: 24px; }
 .btn { flex: 1; padding: 16px 8px; border-radius: var(--radius-sm); border: none; font-size: 16px; font-weight: 600; cursor: pointer; font-family: inherit; touch-action: manipulation; }
 .btn-primary   { background: var(--blue);   color: white; }
@@ -421,12 +425,12 @@ input[type="date"] {
     </div>
     <div class="modal-body">
       <div class="planned-chip" id="modal-planned-info"></div>
-      <div class="field-row">
+      <div class="field-row" id="modal-reps-fields">
         <div class="field-group">
           <div class="field-label">Sets</div>
           <div class="stepper">
             <button onclick="step('modal-sets',-1)">−</button>
-            <input type="number" id="modal-sets" min="0" max="99">
+            <input type="number" id="modal-sets" min="0" max="99" inputmode="numeric">
             <button onclick="step('modal-sets',1)">+</button>
           </div>
         </div>
@@ -434,19 +438,17 @@ input[type="date"] {
           <div class="field-label">Reps</div>
           <div class="stepper">
             <button onclick="step('modal-reps',-1)">−</button>
-            <input type="number" id="modal-reps" min="0" max="99">
+            <input type="number" id="modal-reps" min="0" max="99" inputmode="numeric">
             <button onclick="step('modal-reps',1)">+</button>
           </div>
         </div>
       </div>
-      <div class="field-row">
-        <div class="field-group">
-          <div class="field-label">Duration</div>
-          <input type="text" id="modal-duration" class="text-input" placeholder="e.g. 25 min">
-        </div>
-        <div class="field-group">
-          <div class="field-label">Weight</div>
-          <input type="text" id="modal-weight" class="text-input" placeholder="e.g. 10 kg">
+      <div class="field-group" id="modal-duration-fields">
+        <div class="field-label">Minutes</div>
+        <div class="stepper">
+          <button onclick="step('modal-minutes',-1)">−</button>
+          <input type="number" id="modal-minutes" min="0" max="999" inputmode="numeric">
+          <button onclick="step('modal-minutes',1)">+</button>
         </div>
       </div>
       <div class="field-group">
@@ -478,12 +480,19 @@ input[type="date"] {
         <div class="field-label">Exercise Name</div>
         <input type="text" id="plan-ex-name" class="text-input" placeholder="Exercise name">
       </div>
-      <div class="field-row">
+      <div class="field-group">
+        <div class="field-label">Measured in</div>
+        <div class="seg" id="plan-mode">
+          <button type="button" class="seg-btn" data-mode="reps" onclick="setPlanMode('reps')">Reps</button>
+          <button type="button" class="seg-btn" data-mode="duration" onclick="setPlanMode('duration')">Duration</button>
+        </div>
+      </div>
+      <div class="field-row" id="plan-reps-fields">
         <div class="field-group">
           <div class="field-label">Sets</div>
           <div class="stepper">
             <button onclick="step('plan-sets',-1)">−</button>
-            <input type="number" id="plan-sets" min="0" max="99">
+            <input type="number" id="plan-sets" min="0" max="99" inputmode="numeric">
             <button onclick="step('plan-sets',1)">+</button>
           </div>
         </div>
@@ -491,19 +500,17 @@ input[type="date"] {
           <div class="field-label">Reps</div>
           <div class="stepper">
             <button onclick="step('plan-reps',-1)">−</button>
-            <input type="number" id="plan-reps" min="0" max="99">
+            <input type="number" id="plan-reps" min="0" max="99" inputmode="numeric">
             <button onclick="step('plan-reps',1)">+</button>
           </div>
         </div>
       </div>
-      <div class="field-row">
-        <div class="field-group">
-          <div class="field-label">Duration</div>
-          <input type="text" id="plan-duration" class="text-input" placeholder="e.g. 2 min">
-        </div>
-        <div class="field-group">
-          <div class="field-label">Weight</div>
-          <input type="text" id="plan-weight" class="text-input" placeholder="e.g. 10 kg">
+      <div class="field-group" id="plan-duration-fields">
+        <div class="field-label">Minutes</div>
+        <div class="stepper">
+          <button onclick="step('plan-minutes',-1)">−</button>
+          <input type="number" id="plan-minutes" min="0" max="999" inputmode="numeric">
+          <button onclick="step('plan-minutes',1)">+</button>
         </div>
       </div>
       <div class="field-group" id="plan-modal-days-group">

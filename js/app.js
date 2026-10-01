@@ -112,22 +112,31 @@ function buildDashboard(logRows, today) {
     else if (d < cursor) break;
   }
 
-  // A skipped day should show as 0 done, not silently fall back to the
-  // planned value (which would make it look identical to "done as planned").
+  // Progress series per exercise, from completed (done/modified) entries only
+  // — skipped days are left out rather than plotted as a dip to zero. Each
+  // point is either total reps (sets × reps) or minutes, depending on how the
+  // exercise is measured; the exercise's unit follows its latest entry.
   const byExercise = {};
-  logRows.forEach(r => {
-    if (!byExercise[r.Exercise]) byExercise[r.Exercise] = [];
-    const skipped = r.Status === 'skipped';
-    byExercise[r.Exercise].push({
-      date: r.Date, status: r.Status,
-      plannedReps: r.PlannedReps, actualReps:  skipped ? 0 : (r.ActualReps  || r.PlannedReps),
-      plannedSets: r.PlannedSets, actualSets:  skipped ? 0 : (r.ActualSets  || r.PlannedSets),
-      plannedDuration: r.PlannedDuration, actualDuration: skipped ? '' : (r.ActualDuration || r.PlannedDuration),
-      plannedWeight: r.PlannedWeight, actualWeight: skipped ? '' : (r.ActualWeight || r.PlannedWeight),
-    });
+  logRows.filter(r => r.Status === 'done' || r.Status === 'modified').forEach(r => {
+    (byExercise[r.Exercise] = byExercise[r.Exercise] || []).push(r);
   });
   Object.keys(byExercise).forEach(k => {
-    byExercise[k] = byExercise[k].sort((a,b) => a.date.localeCompare(b.date)).slice(-16);
+    const rows = byExercise[k].sort((a,b) => a.Date.localeCompare(b.Date)).slice(-16);
+    const last = rows[rows.length - 1];
+    const unit = isDurationEx({ reps: last.ActualReps || last.PlannedReps, duration: last.ActualDuration || last.PlannedDuration }) ? 'min' : 'reps';
+    byExercise[k] = {
+      unit,
+      points: rows.map(r => {
+        const sets = +(r.ActualSets || r.PlannedSets) || 1;
+        const reps = +(r.ActualReps || r.PlannedReps) || 0;
+        return {
+          date: r.Date,
+          value: unit === 'min' ? parseMinutes(r.ActualDuration || r.PlannedDuration) : sets * reps,
+          label: unit === 'min' ? parseMinutes(r.ActualDuration || r.PlannedDuration) + ' min' : sets + ' × ' + reps
+        };
+      }).filter(pt => pt.value > 0)
+    };
+    if (!byExercise[k].points.length) delete byExercise[k];
   });
 
   const consistency = [];
@@ -141,14 +150,7 @@ function buildDashboard(logRows, today) {
     });
   }
 
-  const planVsActual = {};
-  Object.keys(byExercise).forEach(ex => {
-    planVsActual[ex] = byExercise[ex].map(e => ({
-      date: e.date, plannedReps: +e.plannedReps || 0, actualReps: +e.actualReps || 0,
-    }));
-  });
-
-  return { streak, byExercise, consistency, planVsActual };
+  return { streak, byExercise, consistency };
 }
 
 // ── FIRESTORE DATA LAYER ───────────────────────────────────────────────────────
@@ -345,6 +347,12 @@ function fmtActual(ex) {
   if (ex.actualWeight)   p.push(ex.actualWeight);
   return p.join(' · ');
 }
+
+// An exercise is measured either in reps (sets × reps) or in minutes
+// (Duration, stored as "N min"). Duration-only means minutes.
+function isDurationEx(ex) { return !!ex.duration && !(+ex.reps); }
+function parseMinutes(s) { return parseFloat(String(s || '').replace(',', '.')) || 0; }
+function fmtMinutes(n) { return n ? n + ' min' : ''; }
 
 function esc(s) { return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 // For values placed in a plain HTML attribute (e.g. data-exercise="..."),
@@ -624,8 +632,11 @@ function showLogModal(date, day, session, exercise, planned, logged) {
   document.getElementById('modal-planned-info').textContent = 'Plan: ' + fmtTarget(planned);
   document.getElementById('modal-sets').value     = logged.actualSets     || planned.sets     || 0;
   document.getElementById('modal-reps').value     = logged.actualReps     || planned.reps     || 0;
-  document.getElementById('modal-duration').value = logged.actualDuration || planned.duration || '';
-  document.getElementById('modal-weight').value   = logged.actualWeight   || planned.weight   || '';
+  document.getElementById('modal-minutes').value  = parseMinutes(logged.actualDuration || planned.duration) || 0;
+  const byDuration = isDurationEx(planned);
+  document.getElementById('modal-reps-fields').style.display     = byDuration ? 'none' : '';
+  document.getElementById('modal-duration-fields').style.display = byDuration ? '' : 'none';
+  editingEx.byDuration = byDuration;
   document.getElementById('modal-note').value     = logged.note || '';
   openModal('log-modal');
 }
@@ -633,10 +644,11 @@ function showLogModal(date, day, session, exercise, planned, logged) {
 function commitLog(status) {
   const { date, day, session, exercise, planned } = editingEx;
   const key  = session + '|' + exercise;
-  const sets = document.getElementById('modal-sets').value;
-  const reps = document.getElementById('modal-reps').value;
-  const dur  = document.getElementById('modal-duration').value;
-  const wt   = document.getElementById('modal-weight').value;
+  const byDuration = editingEx.byDuration;
+  const sets = byDuration ? '' : document.getElementById('modal-sets').value;
+  const reps = byDuration ? '' : document.getElementById('modal-reps').value;
+  const dur  = byDuration ? fmtMinutes(parseMinutes(document.getElementById('modal-minutes').value)) : '';
+  const wt   = '';
   const note = document.getElementById('modal-note').value;
 
   const fields = { status, actualSets: sets, actualReps: reps, actualDuration: dur, actualWeight: wt,
@@ -714,7 +726,7 @@ function historyCol(date, entries) {
 }
 
 // ── PROGRESS ─────────────────────────────────────────────────────────────────
-let chartEx = null, chartPva = null;
+let chartEx = null;
 
 function renderProgress() {
   const d = appState.dashboard;
@@ -728,25 +740,25 @@ function renderProgress() {
     gridHtml += `<div class="day-cell ${cls} ${isToday}" title="${day.date}: ${day.done}/${day.total}">${label}</div>`;
   });
 
-  const exercises = Object.keys(d.byExercise);
-  const opts = exercises.map(e => `<option value="${esc(e)}">${e}</option>`).join('');
+  // Only exercises with at least one completed entry in History.
+  const exercises = Object.keys(d.byExercise).sort((a, b) => a.localeCompare(b));
+  const prev = document.getElementById('ex-select');
+  const selected = prev && exercises.includes(prev.value) ? prev.value : exercises[0];
+  const opts = exercises.map(e => `<option value="${escAttr(e)}"${e === selected ? ' selected' : ''}>${e}</option>`).join('');
 
   document.getElementById('progress-content').innerHTML = `
     <div class="streak-card"><div class="streak-num">${d.streak}</div><div class="streak-lbl">day streak 🔥</div></div>
     <div class="dash-section"><h2>Last 28 Days</h2></div>
     <div class="consistency-grid">${gridHtml}</div>
-    <div class="dash-section"><h2>Reps over time</h2></div>
+    <div class="dash-section"><h2 id="ex-chart-title">Progress</h2></div>
     <div class="chart-container">
-      <select class="chart-select" id="ex-select" onchange="renderExChart()">${opts}</select>
-      <canvas id="ex-chart" height="200"></canvas>
-    </div>
-    <div class="dash-section"><h2>Planned vs Actual</h2></div>
-    <div class="chart-container">
-      <select class="chart-select" id="pva-select" onchange="renderPvaChart()">${opts}</select>
-      <canvas id="pva-chart" height="200"></canvas>
+      ${exercises.length
+        ? `<select class="chart-select" id="ex-select" onchange="renderExChart()">${opts}</select>
+           <canvas id="ex-chart" height="200"></canvas>`
+        : '<div class="empty"><p>Complete an exercise to see progress.</p></div>'}
     </div>`;
 
-  if (exercises.length) { renderExChart(); renderPvaChart(); }
+  if (exercises.length) renderExChart();
 }
 
 function chartColors() {
@@ -755,39 +767,25 @@ function chartColors() {
 }
 
 function renderExChart() {
-  const ex   = document.getElementById('ex-select').value;
-  const data = appState.dashboard.byExercise[ex] || [];
+  const ex = document.getElementById('ex-select').value;
+  const { unit, points } = appState.dashboard.byExercise[ex] || { unit: 'reps', points: [] };
+  const yLabel = unit === 'min' ? 'Minutes' : 'Total reps (sets × reps)';
+  document.getElementById('ex-chart-title').textContent = unit === 'min' ? 'Minutes over time' : 'Reps over time';
   const { grid, text } = chartColors();
   if (chartEx) chartEx.destroy();
   chartEx = new Chart(document.getElementById('ex-chart').getContext('2d'), {
     type: 'line',
     data: {
-      labels: data.map(d => d.date.slice(5)),
-      datasets: [{ label:'Reps', data: data.map(d => +d.actualReps || 0),
-        borderColor:'#34c759', backgroundColor:'rgba(52,199,89,0.1)',
-        tension:0.3, fill:true, pointRadius:5, pointBackgroundColor:'#34c759' }]
+      labels: points.map(p => p.date.slice(5)),
+      datasets: [{ label: yLabel, data: points.map(p => p.value),
+        borderColor:'#34c759', backgroundColor:'rgba(52,199,89,0.1)', borderWidth:2,
+        tension:0.3, fill:true, pointRadius:4, pointHoverRadius:6, pointBackgroundColor:'#34c759' }]
     },
-    options: { responsive:true, plugins:{ legend:{ display:false } },
-      scales: { x:{ grid:{color:grid}, ticks:{color:text,maxTicksLimit:8} }, y:{ grid:{color:grid}, ticks:{color:text}, beginAtZero:true } } }
-  });
-}
-
-function renderPvaChart() {
-  const ex   = document.getElementById('pva-select').value;
-  const data = appState.dashboard.planVsActual[ex] || [];
-  const { grid, text } = chartColors();
-  if (chartPva) chartPva.destroy();
-  chartPva = new Chart(document.getElementById('pva-chart').getContext('2d'), {
-    type: 'bar',
-    data: {
-      labels: data.map(d => d.date.slice(5)),
-      datasets: [
-        { label:'Planned', data: data.map(d => d.plannedReps), backgroundColor:'rgba(0,122,255,0.3)', borderColor:'#007aff', borderWidth:1.5 },
-        { label:'Actual',  data: data.map(d => d.actualReps),  backgroundColor:'rgba(52,199,89,0.5)', borderColor:'#34c759', borderWidth:1.5 }
-      ]
-    },
-    options: { responsive:true, plugins:{ legend:{ labels:{ color:text } } },
-      scales: { x:{ grid:{color:grid}, ticks:{color:text,maxTicksLimit:8} }, y:{ grid:{color:grid}, ticks:{color:text}, beginAtZero:true } } }
+    options: { responsive:true, interaction:{ mode:'index', intersect:false },
+      plugins:{ legend:{ display:false },
+        tooltip:{ callbacks:{ label: c => points[c.dataIndex].label } } },
+      scales: { x:{ grid:{color:grid}, ticks:{color:text,maxTicksLimit:8} },
+        y:{ grid:{color:grid}, ticks:{color:text}, beginAtZero:true, title:{ display:true, text:yLabel, color:text } } } }
   });
 }
 
@@ -888,10 +886,10 @@ function openPlanEditGrid(session, exercise) {
   document.getElementById('plan-modal-title').textContent = 'Edit Exercise';
   document.getElementById('plan-modal-days-group').style.display = 'none';
   document.getElementById('plan-ex-name').value  = canon.exercise;
-  document.getElementById('plan-sets').value     = canon.sets     || 0;
-  document.getElementById('plan-reps').value     = canon.reps     || 0;
-  document.getElementById('plan-duration').value = canon.duration || '';
-  document.getElementById('plan-weight').value   = canon.weight   || '';
+  document.getElementById('plan-sets').value     = canon.sets || 3;
+  document.getElementById('plan-reps').value     = canon.reps || 10;
+  document.getElementById('plan-minutes').value  = parseMinutes(canon.duration) || 10;
+  setPlanMode(isDurationEx(canon) ? 'duration' : 'reps');
   openModal('plan-modal');
 }
 
@@ -903,18 +901,30 @@ function openPlanAdd(session) {
   document.getElementById('plan-ex-name').value  = '';
   document.getElementById('plan-sets').value     = 3;
   document.getElementById('plan-reps').value     = 10;
-  document.getElementById('plan-duration').value = '';
-  document.getElementById('plan-weight').value   = '';
+  document.getElementById('plan-minutes').value  = 10;
+  setPlanMode('reps');
   openModal('plan-modal');
+}
+
+// Reps mode stores Sets × Reps and clears Duration; duration mode stores
+// "N min" and clears Sets/Reps — so every exercise has exactly one measure.
+let planMode = 'reps';
+function setPlanMode(mode) {
+  planMode = mode;
+  document.querySelectorAll('#plan-mode .seg-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  document.getElementById('plan-reps-fields').style.display     = mode === 'reps' ? '' : 'none';
+  document.getElementById('plan-duration-fields').style.display = mode === 'duration' ? '' : 'none';
 }
 
 function savePlanEdit() {
   const name = document.getElementById('plan-ex-name').value.trim();
   if (!name) return;
-  const sets = document.getElementById('plan-sets').value;
-  const reps = document.getElementById('plan-reps').value;
-  const dur  = document.getElementById('plan-duration').value;
-  const wt   = document.getElementById('plan-weight').value;
+  const byReps = planMode === 'reps';
+  const sets = byReps ? document.getElementById('plan-sets').value : '';
+  const reps = byReps ? document.getElementById('plan-reps').value : '';
+  const dur  = byReps ? '' : fmtMinutes(parseMinutes(document.getElementById('plan-minutes').value));
+  const wt   = '';
+  if (byReps ? !(+reps) : !dur) return;
   const { mode, session } = editingPlan;
 
   closeModal('plan-modal');
@@ -1096,7 +1106,7 @@ function step(id, d)    { const el = document.getElementById(id); el.value = Mat
 // attributes in the HTML need these attached to window explicitly.
 Object.assign(window, {
   switchTab, applyDate, closeModal, step,
-  quickDone, openLogModal, openHistoryLogModal, logDone, logModified, deleteLog,
+  quickDone, openLogModal, openHistoryLogModal, logDone, logModified, deleteLog, setPlanMode,
   openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid,
   renderExChart, renderPvaChart
 });
