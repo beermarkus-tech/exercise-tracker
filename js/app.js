@@ -435,7 +435,7 @@ onAuthStateChanged(auth, user => {
   loadAll().then(initApp).catch(err => {
     showLoadingMessage(err.code === 'permission-denied'
       ? 'This account (' + user.email + ') has no access.'
-      : 'Error loading data. Please reload.');
+      : 'Error loading data (' + (err.code || err.message) + '). Please reload.');
     console.error(err);
   });
 });

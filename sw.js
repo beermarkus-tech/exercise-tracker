@@ -1,4 +1,4 @@
-const CACHE = 'exercise-tracker-v1';
+const CACHE = 'exercise-tracker-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -22,19 +22,21 @@ self.addEventListener('activate', event => {
   );
 });
 
-// App shell: cache-first, refreshed in the background.
+// App shell: network-first so a deploy shows up on the very next open, with
+// the cache as the offline fallback. (Cache-first meant every device ran the
+// previous build until a second launch.)
 // Everything else (Firestore, CDN scripts): network passthrough.
 self.addEventListener('fetch', event => {
   const req = event.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
 
   event.respondWith(
-    caches.match(req).then(cached => {
-      const network = fetch(req).then(res => {
-        if (res.ok) caches.open(CACHE).then(cache => cache.put(req, res.clone()));
-        return res;
-      }).catch(() => cached);
-      return cached || network;
-    })
+    fetch(req, { cache: 'no-cache' }).then(res => {
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(cache => cache.put(req, copy));
+      }
+      return res;
+    }).catch(() => caches.match(req))
   );
 });
