@@ -113,8 +113,11 @@ function loadAll() {
 
   // ── LOG: last 60 days, with unlogged past exercises filled in as skipped ─
   // Today is excluded from the fill since the day isn't over yet.
+  // Rows with Status 'deleted' are tombstones: they suppress the implicit
+  // skip for that date, then get dropped so they never reach the frontend.
   const cutoff = daysAgo(60);
-  const recentLog = fillSkippedEntries(logRows.filter(r => r.Date >= cutoff), planRows, cutoff, today);
+  const recentLog = fillSkippedEntries(logRows.filter(r => r.Date >= cutoff), planRows, cutoff, today)
+    .filter(r => r.Status !== 'deleted');
 
   // ── DASHBOARD ───────────────────────────────────────────────────────────
   const dashboard = buildDashboard(recentLog, today);
@@ -395,6 +398,49 @@ function setupInitialPlan() {
   });
   rows.forEach(r => sheet.appendRow(r));
   return { success: true, rowsAdded: rows.length };
+}
+
+// ─── HISTORY CLEANUP — one-off manual helper, not called by doGet ──────────
+// Run from the Apps Script editor. Hides every History entry for exercises
+// whose name contains one of the given (case-insensitive) fragments: existing
+// Log rows are turned into 'deleted' tombstones, and tombstones are also
+// written for past dates where the plan would otherwise produce an implicit
+// skip. Plan rows are left untouched.
+function hideExercisesFromHistory(fragments) {
+  fragments = (fragments || ['single-leg glute bridge', 'single leg glute bridge',
+                             'romanian deadlift', 'bench press'])
+    .map(f => f.toLowerCase());
+  const matches = name => fragments.some(f => String(name).toLowerCase().includes(f));
+
+  const sheet    = getSheet(LOG_TAB);
+  const planRows = sheetToObjects(getSheet(PLAN_TAB));
+  const logRows  = sheetToObjects(sheet);
+  const today    = toIso(new Date());
+  const statusCol = logHeaders().indexOf('Status') + 1;
+
+  let hidden = 0;
+  logRows.forEach((r, i) => {
+    if (matches(r.Exercise) && r.Status !== 'deleted') {
+      sheet.getRange(i + 2, statusCol).setValue('deleted');
+      hidden++;
+    }
+  });
+
+  const logged = new Set(logRows.map(r => r.Date + '|' + r.Session + '|' + r.Exercise));
+  const start  = planRows.map(r => r.ValidFrom).filter(Boolean).sort()[0] || today;
+  const tombstones = [];
+  for (let d = start; d < today; d = nextDay(d)) {
+    const day = getDayName(new Date(d + 'T12:00:00'));
+    resolveDayPlan(day, d, planRows).forEach(r => {
+      if (!matches(r.Exercise) || logged.has(d + '|' + r.Session + '|' + r.Exercise)) return;
+      tombstones.push([d, day, r.Session, r.Exercise, r.Order, r.Sets, r.Reps, r.Duration, r.Weight,
+                       'deleted', '', '', '', '', '', new Date().toISOString()]);
+    });
+  }
+  if (tombstones.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, tombstones.length, tombstones[0].length).setValues(tombstones);
+  }
+  return { success: true, hiddenLogRows: hidden, tombstonesAdded: tombstones.length };
 }
 
 // ─── EXPORT — one-off manual migration helper, not called by doGet ────────────

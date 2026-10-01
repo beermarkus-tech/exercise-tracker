@@ -433,6 +433,9 @@ input[type="date"] {
         <button class="btn btn-primary" onclick="logModified()">Modified</button>
         <button class="btn btn-green"   onclick="logDone()">✓ Done</button>
       </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button class="btn btn-danger" onclick="deleteLog()">Delete</button>
+      </div>
     </div>
   </div>
 </div>
@@ -850,6 +853,21 @@ function commitLog(status) {
   upsertLocalLog(date, day, session, exercise, planned, fields);
 
   enqueueSync('log', date + '|' + key, { date, day, session, exercise, ...fields });
+
+  closeModal('log-modal');
+  renderToday();
+  if (activeTab === 'history') renderHistory();
+}
+
+// Removes the entry from History. Synced as a 'deleted' tombstone rather than
+// a row removal, so an unlogged past exercise doesn't come back as a skip.
+function deleteLog() {
+  const { date, day, session, exercise, planned } = editingEx;
+  if (!confirm('Delete "' + exercise + '" on ' + formatDate(date) + ' from history?')) return;
+  const key = session + '|' + exercise;
+  if (date === currentDate) delete appState.sessionLog[key];
+  upsertLocalLog(date, day, session, exercise, planned, null);
+  enqueueSync('log', date + '|' + key, { date, day, session, exercise, status: 'deleted' });
 
   closeModal('log-modal');
   renderToday();
