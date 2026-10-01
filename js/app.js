@@ -476,6 +476,7 @@ function renderToday() {
   document.getElementById('today-title').textContent = dayName;
   document.getElementById('topbar-date').textContent  = formatDate(currentDate).split(',')[1].trim();
   document.getElementById('date-input').value         = currentDate;
+  document.getElementById('today-badge').hidden       = currentDate === toIso(new Date());
 
   let html = '';
   if (plan.morning.length) {
@@ -1017,6 +1018,12 @@ function animateDaySwipe(direction) {
   el.classList.add(direction === 'next' ? 'day-in-next' : 'day-in-prev');
 }
 
+// "Today" badge next to the date, shown only while viewing another day.
+function goToToday() {
+  const today = toIso(new Date());
+  if (currentDate !== today) goToDate(today, currentDate < today ? 'next' : 'prev');
+}
+
 function applyDate() {
   const val = document.getElementById('date-input').value;
   if (!val) return;
@@ -1105,8 +1112,8 @@ function step(id, d)    { const el = document.getElementById(id); el.value = Mat
 // ── EXPOSE HANDLERS — this file is a module, so inline onclick/onchange
 // attributes in the HTML need these attached to window explicitly.
 Object.assign(window, {
-  switchTab, applyDate, closeModal, step,
+  switchTab, applyDate, goToToday, closeModal, step,
   quickDone, openLogModal, openHistoryLogModal, logDone, logModified, deleteLog, setPlanMode,
   openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid,
-  renderExChart, renderPvaChart
+  renderExChart
 });

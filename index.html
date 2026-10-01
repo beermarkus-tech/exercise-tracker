@@ -85,6 +85,13 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
   color: var(--blue); background: none;
   border: none; cursor: pointer; padding: 6px 0;
 }
+.date-wrap { display: flex; align-items: center; gap: 10px; }
+.today-badge {
+  font-size: 13px; font-weight: 600; font-family: inherit;
+  color: #fff; background: var(--blue);
+  border: none; border-radius: 20px; padding: 5px 12px; cursor: pointer;
+}
+.today-badge[hidden] { display: none; }
 .sr-date-input {
   position: absolute; top: 0; left: 0; width: 1px; height: 1px; padding: 0; margin: 0;
   overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap;
@@ -374,7 +381,10 @@ input[type="date"] {
   <div class="screen active" id="screen-today">
     <div class="topbar">
       <h1 id="today-title">Today</h1>
-      <label class="date-btn" for="date-input">📅 <span id="topbar-date"></span></label>
+      <div class="date-wrap">
+        <button type="button" class="today-badge" id="today-badge" onclick="goToToday()" hidden>Today</button>
+        <label class="date-btn" for="date-input">📅 <span id="topbar-date"></span></label>
+      </div>
       <input type="date" id="date-input" class="sr-date-input" onchange="applyDate()">
     </div>
     <div id="today-content"></div>
