@@ -112,15 +112,21 @@ function planRowToEx(r) {
 const EXERCISE_DAYS = 32;
 
 function buildDashboard(logRows, today) {
-  const doneDates = [...new Set(
-    logRows.filter(r => r.Status === 'done' || r.Status === 'modified').map(r => r.Date)
-  )].sort().reverse();
+  // Streak = consecutive days on plan, walking back from today. A day with
+  // exercises planned counts once something was done; a planned rest day
+  // (nothing scheduled) counts as on plan too. Today never breaks the streak
+  // while it's still in progress. Stops before the plan's first day.
+  const doneDates = new Set(
+    logRows.filter(r => r.Status === 'done' || r.Status === 'modified').map(r => r.Date));
+  const loggedDates = new Set(logRows.map(r => r.Date));
+  const planStart = appState.planRowsRaw.map(r => r.ValidFrom).filter(Boolean).sort()[0] || today;
 
   let streak = 0;
-  let cursor = today;
-  for (const d of doneDates) {
-    if (d === cursor) { streak++; cursor = prevDay(cursor); }
-    else if (d < cursor) break;
+  for (let d = today, i = 0; i < 60 && d >= planStart; d = prevDay(d), i++) {
+    const restDay = !loggedDates.has(d) &&
+      !resolveDayPlan(getDateDayName(d), d, appState.planRowsRaw, d < today).length;
+    if (restDay || doneDates.has(d)) streak++;
+    else if (d !== today) break;
   }
 
   // Progress series per exercise, from completed (done/modified) entries only
