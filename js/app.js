@@ -171,7 +171,10 @@ async function loadAll() {
     };
   });
 
-  const recentLog = fillSkippedEntries(logRows, planRowsRaw, cutoff, today);
+  // Status 'deleted' docs are tombstones: they suppress the implicit skip for
+  // that date (see deleteLog), then get dropped so History never shows them.
+  const recentLog = fillSkippedEntries(logRows, planRowsRaw, cutoff, today)
+    .filter(r => r.Status !== 'deleted');
   const dashboard = buildDashboard(recentLog, today);
 
   return { plan, log: recentLog, dashboard, today, dayName: getDayName(new Date()) };
@@ -607,6 +610,22 @@ function commitLog(status) {
   refreshDashboard();
 }
 
+// Removes the entry from History. Written as a 'deleted' tombstone rather
+// than deleting the doc, so a past exercise that was never logged doesn't
+// come straight back as an implicit skip.
+function deleteLog() {
+  const { date, day, session, exercise } = editingEx;
+  if (!confirm('Delete "' + exercise + '" on ' + formatDate(date) + ' from history?')) return;
+  if (date === currentDate) delete appState.sessionLog[session + '|' + exercise];
+  upsertLocalLog(date, day, session, exercise, null, null);
+  trackWrite(logExercise({ date, day, session, exercise, status: 'deleted' }));
+
+  closeModal('log-modal');
+  renderToday();
+  if (activeTab === 'history') renderHistory();
+  refreshDashboard();
+}
+
 function logDone()     { commitLog('done'); }
 function logModified() { commitLog('modified'); }
 
@@ -1033,7 +1052,7 @@ function step(id, d)    { const el = document.getElementById(id); el.value = Mat
 // attributes in the HTML need these attached to window explicitly.
 Object.assign(window, {
   switchTab, applyDate, closeModal, step,
-  quickDone, openLogModal, openHistoryLogModal, logDone, logModified,
+  quickDone, openLogModal, openHistoryLogModal, logDone, logModified, deleteLog,
   openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid,
   renderExChart, renderPvaChart
 });
