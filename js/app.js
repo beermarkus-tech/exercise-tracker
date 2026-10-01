@@ -740,8 +740,12 @@ function renderProgress() {
   const d = appState.dashboard;
   if (!d) { document.getElementById('progress-content').innerHTML = '<div class="loader"><div class="spinner"></div> Loading…</div>'; return; }
 
+  // Only days that had something planned (or logged) — rest days and days
+  // before the plan existed are left out of the grid entirely.
+  const hasPlan = day => day.total > 0 ||
+    resolveDayPlan(getDateDayName(day.date), day.date, appState.planRowsRaw, day.date < appState.today).length > 0;
   let gridHtml = '';
-  d.consistency.forEach(day => {
+  d.consistency.filter(hasPlan).forEach(day => {
     const cls     = day.done === day.total && day.total > 0 ? 'full' : day.done > 0 ? 'part' : '';
     const isToday = day.date === appState.today ? 'today' : '';
     const label   = new Date(day.date + 'T12:00:00').getDate();
