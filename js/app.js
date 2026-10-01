@@ -441,6 +441,10 @@ onAuthStateChanged(auth, user => {
   started = true;
   showLoadingMessage('Loading your plan…');
   loadAll().then(initApp).catch(err => {
+    // initApp may already have hidden the loading screen; bring it back so
+    // the error is visible instead of an empty screen.
+    document.getElementById('app').style.display = 'none';
+    screen.style.display = '';
     showLoadingMessage(err.code === 'permission-denied'
       ? 'This account (' + user.email + ') has no access.'
       : 'Error loading data (' + (err.code || err.message) + '). Please reload.');
@@ -476,7 +480,10 @@ function renderToday() {
   document.getElementById('today-title').textContent = dayName;
   document.getElementById('topbar-date').textContent  = formatDate(currentDate).split(',')[1].trim();
   document.getElementById('date-input').value         = currentDate;
-  document.getElementById('today-badge').hidden       = currentDate === toIso(new Date());
+  // Null-safe: a cached older index.html may lack the badge, and throwing
+  // here would leave the whole Today screen blank.
+  const badge = document.getElementById('today-badge');
+  if (badge) badge.hidden = currentDate === toIso(new Date());
 
   let html = '';
   if (plan.morning.length) {
@@ -738,7 +745,7 @@ function renderProgress() {
     const cls     = day.done === day.total && day.total > 0 ? 'full' : day.done > 0 ? 'part' : '';
     const isToday = day.date === appState.today ? 'today' : '';
     const label   = new Date(day.date + 'T12:00:00').getDate();
-    gridHtml += `<div class="day-cell ${cls} ${isToday}" title="${day.date}: ${day.done}/${day.total}">${label}</div>`;
+    gridHtml += `<div class="day-cell ${cls} ${isToday}" title="${day.date}: ${day.done}/${day.total}" onclick="openDay('${day.date}')">${label}</div>`;
   });
 
   // Only exercises with at least one completed entry in History.
@@ -1018,6 +1025,12 @@ function animateDaySwipe(direction) {
   el.classList.add(direction === 'next' ? 'day-in-next' : 'day-in-prev');
 }
 
+// Tapping a day tile on Progress opens that day on the Today screen.
+function openDay(dateIso) {
+  goToDate(dateIso);
+  switchTab('today');
+}
+
 // "Today" badge next to the date, shown only while viewing another day.
 function goToToday() {
   const today = toIso(new Date());
@@ -1112,7 +1125,7 @@ function step(id, d)    { const el = document.getElementById(id); el.value = Mat
 // ── EXPOSE HANDLERS — this file is a module, so inline onclick/onchange
 // attributes in the HTML need these attached to window explicitly.
 Object.assign(window, {
-  switchTab, applyDate, goToToday, closeModal, step,
+  switchTab, applyDate, goToToday, openDay, closeModal, step,
   quickDone, openLogModal, openHistoryLogModal, logDone, logModified, deleteLog, setPlanMode,
   openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid,
   renderExChart
