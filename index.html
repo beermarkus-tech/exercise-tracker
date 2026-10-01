@@ -295,7 +295,7 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
 .streak-lbl  { font-size: 16px; opacity: 0.85; margin-top: 6px; font-weight: 500; }
 .dash-section { padding: 20px 16px 0; }
 .dash-section h2 { font-size: 13px; font-weight: 600; margin-bottom: 14px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; }
-.consistency-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; padding: 0 16px 16px; }
+.consistency-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 5px; padding: 0 16px 16px; }
 .day-cell {
   aspect-ratio: 1; border-radius: 5px; background: var(--bg2); cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -544,7 +544,7 @@ input[type="date"] {
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script type="module" src="js/app.js?v=13"></script>
+<script type="module" src="js/app.js?v=14"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

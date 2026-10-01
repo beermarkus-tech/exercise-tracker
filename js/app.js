@@ -109,6 +109,8 @@ function planRowToEx(r) {
 }
 
 // ── DASHBOARD (ported from Code.js) ───────────────────────────────────────────
+const EXERCISE_DAYS = 32;
+
 function buildDashboard(logRows, today) {
   const doneDates = [...new Set(
     logRows.filter(r => r.Status === 'done' || r.Status === 'modified').map(r => r.Date)
@@ -148,11 +150,17 @@ function buildDashboard(logRows, today) {
     if (!byExercise[k].points.length) delete byExercise[k];
   });
 
+  // The last EXERCISE_DAYS days that had something planned (or logged),
+  // walking back from today; rest days are skipped rather than shown empty.
+  // Bounded by the 60 days of log that loadAll fetches.
   const consistency = [];
-  for (let i = 27; i >= 0; i--) {
+  for (let i = 0; i < 60 && consistency.length < EXERCISE_DAYS; i++) {
     const d = daysAgo(i);
     const dayRows = logRows.filter(r => r.Date === d);
-    consistency.push({
+    const planned = dayRows.length > 0 ||
+      resolveDayPlan(getDateDayName(d), d, appState.planRowsRaw, d < today).length > 0;
+    if (!planned) continue;
+    consistency.unshift({
       date: d, total: dayRows.length,
       done:    dayRows.filter(r => r.Status === 'done' || r.Status === 'modified').length,
       skipped: dayRows.filter(r => r.Status === 'skipped').length
@@ -753,12 +761,8 @@ function renderProgress() {
   const d = appState.dashboard;
   if (!d) { document.getElementById('progress-content').innerHTML = '<div class="loader"><div class="spinner"></div> Loading…</div>'; return; }
 
-  // Only days that had something planned (or logged) — rest days and days
-  // before the plan existed are left out of the grid entirely.
-  const hasPlan = day => day.total > 0 ||
-    resolveDayPlan(getDateDayName(day.date), day.date, appState.planRowsRaw, day.date < appState.today).length > 0;
   let gridHtml = '';
-  d.consistency.filter(hasPlan).forEach(day => {
+  d.consistency.forEach(day => {
     const cls     = day.done === day.total && day.total > 0 ? 'full' : day.done > 0 ? 'part' : '';
     const isToday = day.date === appState.today ? 'today' : '';
     const label   = new Date(day.date + 'T12:00:00').getDate();
@@ -773,7 +777,7 @@ function renderProgress() {
 
   document.getElementById('progress-content').innerHTML = `
     <div class="streak-card"><div class="streak-num">${d.streak}</div><div class="streak-lbl">day streak 🔥</div></div>
-    <div class="dash-section"><h2>Last 28 Days</h2></div>
+    <div class="dash-section"><h2>Last ${EXERCISE_DAYS} exercise days</h2></div>
     <div class="consistency-grid">${gridHtml}</div>
     <div class="dash-section"><h2 id="ex-chart-title">Progress</h2></div>
     <div class="chart-container">
