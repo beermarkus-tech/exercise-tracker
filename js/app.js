@@ -502,25 +502,26 @@ async function ensureUserProfile(user) {
 // Runs for the admin only: copies docs out of the old shared top-level
 // plan/log collections (from before multi-user support) into
 // users/{adminUid}/plan and .../log, so the admin doesn't lose their
-// existing history in this migration. Checks plan and log independently —
-// an earlier attempt can plausibly copy one and fail partway through the
-// other (e.g. Promise.all rejecting on one bad write doesn't undo the
-// writes that already landed), so "plan already has docs" must not skip
-// log too. No-ops instantly once both sides are non-empty. Non-admins never
-// get here (and couldn't anyway — Firestore Rules only let the admin read
-// the legacy top-level collections).
-async function migrateLegacyDataIfNeeded() {
-  const [myPlan, myLog] = await Promise.all([getDocs(userCol('plan')), getDocs(userCol('log'))]);
-  const writes = [];
-  if (myPlan.empty) {
-    const legacyPlan = await getDocs(collection(db, 'plan'));
-    legacyPlan.docs.forEach(d => writes.push(setDoc(userDoc('plan', d.id), d.data())));
-  }
-  if (myLog.empty) {
-    const legacyLog = await getDocs(collection(db, 'log'));
-    legacyLog.docs.forEach(d => writes.push(setDoc(userDoc('log', d.id), d.data())));
-  }
-  if (writes.length) await Promise.all(writes);
+// existing history in this migration.
+//
+// Tracked by an explicit legacyMigrated flag on the profile doc, set only
+// once BOTH copies fully succeed — not by checking whether the destination
+// already has any docs, which broke in both directions: a partial failure
+// (Promise.all rejecting on one bad write doesn't undo the others that
+// already landed) left it looking "already migrated" with data silently
+// missing, forever, on every later retry; and routinely re-copying
+// everything just because the check came back empty would risk clobbering
+// a real edit made after a successful migration. Non-admins never reach
+// this (and couldn't anyway — Rules only let the admin read the legacy
+// top-level collections).
+async function migrateLegacyDataIfNeeded(profileRef, profile) {
+  if (profile.legacyMigrated) return;
+  const [legacyPlan, legacyLog] = await Promise.all([getDocs(collection(db, 'plan')), getDocs(collection(db, 'log'))]);
+  await Promise.all([
+    ...legacyPlan.docs.map(d => setDoc(userDoc('plan', d.id), d.data())),
+    ...legacyLog.docs.map(d => setDoc(userDoc('log', d.id), d.data()))
+  ]);
+  await updateDoc(profileRef, { legacyMigrated: true });
 }
 
 let started = false;
@@ -554,7 +555,7 @@ onAuthStateChanged(auth, async user => {
     myRealUid = user.uid;
     isAdmin = profile.role === 'admin';
     document.getElementById('nav-users').hidden = !isAdmin;
-    if (isAdmin) await migrateLegacyDataIfNeeded();
+    if (isAdmin) await migrateLegacyDataIfNeeded(doc(db, 'users', user.uid), profile);
     initApp(await loadAll());
   } catch (err) {
     // Let a later retry (reload, or another onAuthStateChanged firing) try
