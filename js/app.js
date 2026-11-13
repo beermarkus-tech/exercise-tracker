@@ -549,6 +549,11 @@ onAuthStateChanged(auth, async user => {
     if (isAdmin) await migrateLegacyDataIfNeeded();
     initApp(await loadAll());
   } catch (err) {
+    // Let a later retry (reload, or another onAuthStateChanged firing) try
+    // again instead of getting stuck here forever — e.g. this attempt may
+    // have hit permission-denied because the Firestore Rules hadn't been
+    // published yet, which a reload after fixing that should recover from.
+    started = false;
     // initApp may already have hidden the loading screen; bring it back so
     // the error is visible instead of an empty screen.
     document.getElementById('app').style.display = 'none';
