@@ -59,6 +59,20 @@ body { background: var(--bg); color: var(--text); font-family: -apple-system, Bl
 
 #app { display: flex; flex-direction: column; height: 100vh; }
 
+/* ── VIEWING AS (admin, another user's data) ── */
+#viewing-as-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-shrink: 0; padding: 8px 16px; background: var(--amber); color: #1c1c1e;
+  font-size: 13px; font-weight: 600;
+}
+#viewing-as-bar[hidden] { display: none; }
+#viewing-as-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#viewing-as-bar button {
+  flex-shrink: 0; background: rgba(0,0,0,0.12); border: none; border-radius: 14px;
+  padding: 5px 12px; font-size: 12px; font-weight: 700; font-family: inherit;
+  color: inherit; cursor: pointer; touch-action: manipulation;
+}
+
 /* ── SCREENS ── */
 .screen { display: none; flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 12px); }
 
@@ -360,12 +374,14 @@ nav button[hidden] { display: none; }
 .user-info { flex: 1; min-width: 0; }
 .user-name  { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-email { font-size: 13px; color: var(--text3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 .user-toggle-btn {
   flex-shrink: 0; padding: 8px 14px; border-radius: 20px; border: none;
   font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
   background: var(--bg3); color: var(--text); touch-action: manipulation;
 }
 .user-toggle-btn.danger { background: rgba(255,59,48,0.12); color: var(--red); }
+.user-toggle-btn.view   { background: rgba(0,122,255,0.12); color: var(--blue); }
 
 .loader { display: flex; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text3); font-size: 16px; gap: 12px; }
 .empty  { text-align: center; padding: 60px 20px; color: var(--text3); }
@@ -403,6 +419,11 @@ input[type="date"] {
 </div>
 
 <div id="app" style="display:none;">
+
+  <div id="viewing-as-bar" hidden>
+    <span id="viewing-as-text"></span>
+    <button type="button" onclick="returnToMyData()">Back to mine</button>
+  </div>
 
   <div class="screen active" id="screen-today">
     <div class="topbar">
@@ -579,7 +600,7 @@ input[type="date"] {
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script type="module" src="js/app.js?v=19"></script>
+<script type="module" src="js/app.js?v=20"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));

@@ -17,7 +17,8 @@ const auth = getAuth(fbApp);
 // Users screen — see ensureUserProfile() and the Firestore Rules this
 // relies on (not in this repo; see the deploy notes).
 const ADMIN_EMAIL = 'beer.markus@gmail.com';
-let uid = null;        // set once sign-in resolves; every data call below uses it
+let uid = null;        // whose data is currently loaded — every data call below uses it
+let myRealUid = null;  // the signed-in account's own uid, constant — lets "view as" switch back
 let isAdmin = false;
 
 document.getElementById('build-number').textContent = 'Build ' + BUILD;
@@ -528,6 +529,7 @@ onAuthStateChanged(auth, async user => {
   if (!user) {
     started = false;
     uid = null;
+    myRealUid = null;
     document.getElementById('app').style.display = 'none';
     screen.style.display = '';
     screen.classList.remove('disabled');
@@ -549,6 +551,7 @@ onAuthStateChanged(auth, async user => {
       return;
     }
     uid = user.uid;
+    myRealUid = user.uid;
     isAdmin = profile.role === 'admin';
     document.getElementById('nav-users').hidden = !isAdmin;
     if (isAdmin) await migrateLegacyDataIfNeeded();
@@ -1136,7 +1139,7 @@ async function renderUsersScreen() {
     .sort((a, b) => (a.role === 'admin' ? -1 : b.role === 'admin' ? 1 : (a.email || '').localeCompare(b.email || '')));
 
   el.innerHTML = users.map(u => {
-    const isMe = u.uid === uid;
+    const isMe = u.uid === myRealUid;
     const name = u.displayName || u.email || '(no name)';
     return `<div class="user-row">
       ${u.photoURL ? `<img class="user-avatar" src="${escAttr(u.photoURL)}" onerror="this.remove()">` : '<div class="user-avatar"></div>'}
@@ -1144,9 +1147,39 @@ async function renderUsersScreen() {
         <div class="user-name">${name}${u.role === 'admin' ? ' · Admin' : ''}${u.disabled ? ' · Disabled' : ''}</div>
         <div class="user-email">${u.email || ''}</div>
       </div>
-      ${isMe ? '' : `<button class="user-toggle-btn${u.disabled ? '' : ' danger'}" onclick="toggleUserAccess('${u.uid}',${!!u.disabled})">${u.disabled ? 'Enable' : 'Disable'}</button>`}
+      ${isMe ? '' : `<div class="user-actions">
+        <button class="user-toggle-btn view" onclick="viewAsUser('${u.uid}','${esc(name)}')">View/Edit</button>
+        <button class="user-toggle-btn${u.disabled ? '' : ' danger'}" onclick="toggleUserAccess('${u.uid}',${!!u.disabled})">${u.disabled ? 'Enable' : 'Disable'}</button>
+      </div>`}
     </div>`;
   }).join('') || '<div class="empty"><p>No users yet.</p></div>';
+}
+
+// Admin-only: temporarily switch the whole app onto another user's data
+// (same uid-scoped data layer everything else already goes through — no
+// separate "admin edit" path needed) so their plan/log can be viewed and
+// edited directly. myRealUid never changes, so returnToMyData() always
+// knows the way back regardless of how many users were viewed in between.
+async function viewAsUser(targetUid, label) {
+  const prevUid = uid;
+  uid = targetUid;
+  try {
+    initApp(await loadAll());
+  } catch (err) {
+    uid = prevUid;
+    alert("Could not load that user's data: " + (err.code || err.message));
+    return;
+  }
+  document.getElementById('viewing-as-text').textContent = 'Viewing: ' + label;
+  document.getElementById('viewing-as-bar').hidden = false;
+  switchTab('plan');
+}
+
+async function returnToMyData() {
+  uid = myRealUid;
+  document.getElementById('viewing-as-bar').hidden = true;
+  initApp(await loadAll());
+  switchTab('users');
 }
 
 async function toggleUserAccess(targetUid, currentlyDisabled) {
@@ -1275,5 +1308,6 @@ Object.assign(window, {
   switchTab, applyDate, goToToday, openDay, closeModal, step,
   quickDone, openLogModal, openHistoryLogModal, logDone, logModified, deleteLog, setPlanMode,
   openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid, toggleUserAccess, signOutApp,
+  viewAsUser, returnToMyData,
   renderExChart
 });
