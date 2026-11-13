@@ -498,23 +498,28 @@ async function ensureUserProfile(user) {
   return snap.data();
 }
 
-// Runs once for the admin only, the first time their new per-user
-// subcollection is empty: copies every doc out of the old shared top-level
+// Runs for the admin only: copies docs out of the old shared top-level
 // plan/log collections (from before multi-user support) into
 // users/{adminUid}/plan and .../log, so the admin doesn't lose their
-// existing history in this migration. No-ops instantly on every later
-// sign-in once that subcollection is non-empty. Non-admins never get here
-// (and couldn't anyway — Firestore Rules only let the admin read the
-// legacy top-level collections).
+// existing history in this migration. Checks plan and log independently —
+// an earlier attempt can plausibly copy one and fail partway through the
+// other (e.g. Promise.all rejecting on one bad write doesn't undo the
+// writes that already landed), so "plan already has docs" must not skip
+// log too. No-ops instantly once both sides are non-empty. Non-admins never
+// get here (and couldn't anyway — Firestore Rules only let the admin read
+// the legacy top-level collections).
 async function migrateLegacyDataIfNeeded() {
-  const already = await getDocs(userCol('plan'));
-  if (!already.empty) return;
-  const [legacyPlan, legacyLog] = await Promise.all([getDocs(collection(db, 'plan')), getDocs(collection(db, 'log'))]);
-  if (legacyPlan.empty && legacyLog.empty) return;
-  await Promise.all([
-    ...legacyPlan.docs.map(d => setDoc(userDoc('plan', d.id), d.data())),
-    ...legacyLog.docs.map(d => setDoc(userDoc('log', d.id), d.data()))
-  ]);
+  const [myPlan, myLog] = await Promise.all([getDocs(userCol('plan')), getDocs(userCol('log'))]);
+  const writes = [];
+  if (myPlan.empty) {
+    const legacyPlan = await getDocs(collection(db, 'plan'));
+    legacyPlan.docs.forEach(d => writes.push(setDoc(userDoc('plan', d.id), d.data())));
+  }
+  if (myLog.empty) {
+    const legacyLog = await getDocs(collection(db, 'log'));
+    legacyLog.docs.forEach(d => writes.push(setDoc(userDoc('log', d.id), d.data())));
+  }
+  if (writes.length) await Promise.all(writes);
 }
 
 let started = false;
