@@ -2,15 +2,23 @@ import { firebaseConfig } from './firebase-config.js';
 import { BUILD } from './build.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import {
-  getFirestore, collection, getDocs, addDoc, updateDoc, deleteDoc, setDoc, doc, query, where
+  getFirestore, collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, setDoc, doc, query, where
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import {
-  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect
+  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, signOut
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
 
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const auth = getAuth(fbApp);
+
+// The one admin account. Everyone else who signs in is a plain "user" with
+// their own private plan/log, which the admin can see and revoke from the
+// Users screen — see ensureUserProfile() and the Firestore Rules this
+// relies on (not in this repo; see the deploy notes).
+const ADMIN_EMAIL = 'beer.markus@gmail.com';
+let uid = null;        // set once sign-in resolves; every data call below uses it
+let isAdmin = false;
 
 document.getElementById('build-number').textContent = 'Build ' + BUILD;
 
@@ -182,16 +190,21 @@ function buildDashboard(logRows, today) {
 // ── FIRESTORE DATA LAYER ───────────────────────────────────────────────────────
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
 function logDocId(date, session, exercise) { return `${date}_${session}_${slug(exercise)}`; }
+// Every user's plan/log lives under their own users/{uid}/... subcollection
+// (Firestore Rules enforce that uid can only ever be the signed-in caller's
+// own, and nothing at all once their profile is disabled).
+function userCol(name) { return collection(db, 'users', uid, name); }
+function userDoc(name, id) { return doc(db, 'users', uid, name, id); }
 
 async function loadAll() {
-  const planSnap = await getDocs(collection(db, 'plan'));
+  const planSnap = await getDocs(userCol('plan'));
   const planRowsRaw = planSnap.docs.map(d => ({ id: d.id, ...d.data() }));
   appState.planRowsRaw = planRowsRaw;
 
   const today  = toIso(new Date());
   const cutoff = daysAgo(60);
 
-  const logSnap = await getDocs(query(collection(db, 'log'), where('Date', '>=', cutoff)));
+  const logSnap = await getDocs(query(userCol('log'), where('Date', '>=', cutoff)));
   const logRows = logSnap.docs.map(d => d.data());
 
   const plan = {};
@@ -235,13 +248,13 @@ async function logExercise(payload) {
     Note: payload.note || '',
     LoggedAt: new Date().toISOString()
   };
-  return setDoc(doc(db, 'log', logDocId(dateIso, payload.session, payload.exercise)), newRow);
+  return setDoc(userDoc('log', logDocId(dateIso, payload.session, payload.exercise)), newRow);
 }
 
 // Un-log an exercise (e.g. the user unchecks it again before it's over) so
 // it reverts to being implicitly skipped rather than leaving a stale row.
 function removeLog(payload) {
-  return deleteDoc(doc(db, 'log', logDocId(payload.date, payload.session, payload.exercise)));
+  return deleteDoc(userDoc('log', logDocId(payload.date, payload.session, payload.exercise)));
 }
 
 // Renaming a plan exercise only touches the plan doc — log rows still carry
@@ -267,7 +280,7 @@ function renameLogExercise(session, oldExercise, newExercise) {
     r.Exercise = newExercise;
     if (!r.LoggedAt) return;
     const id = logDocId(r.Date, session, oldExercise);
-    trackWrite(updateDoc(doc(db, 'log', id), { Exercise: newExercise }));
+    trackWrite(updateDoc(userDoc('log', id), { Exercise: newExercise }));
   });
 }
 
@@ -278,7 +291,7 @@ async function updatePlan(payload) {
   if (!current) return;
 
   const maxVersion = Math.max(...rows.map(r => +r.Version || 0));
-  await updateDoc(doc(db, 'plan', current.id), { Active: false, ValidTo: dateIso });
+  await updateDoc(userDoc('plan', current.id), { Active: false, ValidTo: dateIso });
   current.Active = false;
   current.ValidTo = dateIso;
 
@@ -286,7 +299,7 @@ async function updatePlan(payload) {
   delete updated.id;
   delete updated.ValidTo;
   Object.assign(updated, payload.fields, { Version: String(maxVersion + 1), ValidFrom: dateIso, Active: true });
-  const ref = await addDoc(collection(db, 'plan'), updated);
+  const ref = await addDoc(userCol('plan'), updated);
   rows.push({ id: ref.id, ...updated });
 }
 
@@ -310,7 +323,7 @@ async function addExercise(payload) {
     Duration: payload.duration || '', Weight: payload.weight || '',
     Order: String(order), Active: true
   };
-  const ref = await addDoc(collection(db, 'plan'), newRow);
+  const ref = await addDoc(userCol('plan'), newRow);
   rows.push({ id: ref.id, ...newRow });
 }
 
@@ -319,7 +332,7 @@ async function removeExercise(payload) {
   const current = rows.find(r => r.Active === true && r.Day === payload.day && r.Session === payload.session && r.Exercise === payload.exercise);
   if (!current) return;
   const dateIso = toIso(new Date());
-  await updateDoc(doc(db, 'plan', current.id), { Active: false, ValidTo: dateIso });
+  await updateDoc(userDoc('plan', current.id), { Active: false, ValidTo: dateIso });
   current.Active = false;
   current.ValidTo = dateIso;
 }
@@ -433,9 +446,11 @@ function initApp(data) {
   renderToday();
 }
 
-// Firestore rules only admit the owner's Google account, so nothing can be
-// read until sign-in completes. Auth persists in IndexedDB, so this is a
-// one-time step per device; afterwards onAuthStateChanged fires straight away.
+// Firestore rules only admit a signed-in account, and only to its own
+// users/{uid} data — so nothing can be read until sign-in resolves and the
+// profile/disabled checks below pass. Auth persists in IndexedDB, so this
+// is a one-time step per device; afterwards onAuthStateChanged fires
+// straight away.
 function showLoadingMessage(text) {
   document.querySelector('#loading-screen p').textContent = text;
 }
@@ -457,11 +472,60 @@ async function signIn() {
   }
 }
 document.getElementById('sign-in-btn').addEventListener('click', signIn);
+document.getElementById('sign-out-btn').addEventListener('click', () => signOut(auth));
+function signOutApp() { return signOut(auth); }
+
+// Creates the profile doc on first sign-in (role is admin only for
+// ADMIN_EMAIL — everyone else is a plain user with full access to their own
+// data until the admin disables them from the Users screen) or refreshes
+// the cached display name/photo/lastSignIn on later ones. Firestore Rules
+// forbid a non-admin from writing their own role/disabled fields, so this
+// can't be used to self-promote or self-reinstate.
+async function ensureUserProfile(user) {
+  const ref  = doc(db, 'users', user.uid);
+  const snap = await getDoc(ref);
+  const now  = new Date().toISOString();
+  if (!snap.exists()) {
+    const profile = {
+      email: user.email, displayName: user.displayName || '', photoURL: user.photoURL || '',
+      role: user.email === ADMIN_EMAIL ? 'admin' : 'user', disabled: false,
+      createdAt: now, lastSignIn: now
+    };
+    await setDoc(ref, profile);
+    return profile;
+  }
+  await updateDoc(ref, { displayName: user.displayName || '', photoURL: user.photoURL || '', lastSignIn: now });
+  return snap.data();
+}
+
+// Runs once for the admin only, the first time their new per-user
+// subcollection is empty: copies every doc out of the old shared top-level
+// plan/log collections (from before multi-user support) into
+// users/{adminUid}/plan and .../log, so the admin doesn't lose their
+// existing history in this migration. No-ops instantly on every later
+// sign-in once that subcollection is non-empty. Non-admins never get here
+// (and couldn't anyway — Firestore Rules only let the admin read the
+// legacy top-level collections).
+async function migrateLegacyDataIfNeeded() {
+  const already = await getDocs(userCol('plan'));
+  if (!already.empty) return;
+  const [legacyPlan, legacyLog] = await Promise.all([getDocs(collection(db, 'plan')), getDocs(collection(db, 'log'))]);
+  if (legacyPlan.empty && legacyLog.empty) return;
+  await Promise.all([
+    ...legacyPlan.docs.map(d => setDoc(userDoc('plan', d.id), d.data())),
+    ...legacyLog.docs.map(d => setDoc(userDoc('log', d.id), d.data()))
+  ]);
+}
 
 let started = false;
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   const screen = document.getElementById('loading-screen');
   if (!user) {
+    started = false;
+    uid = null;
+    document.getElementById('app').style.display = 'none';
+    screen.style.display = '';
+    screen.classList.remove('disabled');
     screen.classList.add('signed-out');
     showLoadingMessage('Sign in to load your plan.');
     return;
@@ -470,7 +534,21 @@ onAuthStateChanged(auth, user => {
   if (started) return;
   started = true;
   showLoadingMessage('Loading your plan…');
-  loadAll().then(initApp).catch(err => {
+  try {
+    const profile = await ensureUserProfile(user);
+    if (profile.disabled) {
+      document.getElementById('app').style.display = 'none';
+      screen.style.display = '';
+      screen.classList.add('disabled');
+      showLoadingMessage('Your access has been revoked. Contact the admin, or sign in with a different account.');
+      return;
+    }
+    uid = user.uid;
+    isAdmin = profile.role === 'admin';
+    document.getElementById('nav-users').hidden = !isAdmin;
+    if (isAdmin) await migrateLegacyDataIfNeeded();
+    initApp(await loadAll());
+  } catch (err) {
     // initApp may already have hidden the loading screen; bring it back so
     // the error is visible instead of an empty screen.
     document.getElementById('app').style.display = 'none';
@@ -479,7 +557,7 @@ onAuthStateChanged(auth, user => {
       ? 'This account (' + user.email + ') has no access.'
       : 'Error loading data (' + (err.code || err.message) + '). Please reload.');
     console.error(err);
-  });
+  }
 });
 
 // ── TABS ─────────────────────────────────────────────────────────────────────
@@ -495,6 +573,7 @@ function switchTab(tab) {
   if (tab === 'history')  renderHistory();
   if (tab === 'progress') renderProgress();
   if (tab === 'plan')     renderPlanScreen();
+  if (tab === 'users')    renderUsersScreen();
 }
 
 // ── TODAY ─────────────────────────────────────────────────────────────────────
@@ -895,6 +974,7 @@ function renderPlanScreen() {
     });
     html += `<button class="add-exercise-btn" onclick="openPlanAdd('${session}')">+ Add exercise</button>`;
   });
+  html += `<div class="sign-out-row"><button class="sign-out-link" onclick="signOutApp()">Sign out${auth.currentUser ? ' (' + auth.currentUser.email + ')' : ''}</button></div>`;
   html += '</div>';
   document.getElementById('plan-content').innerHTML = html;
 }
@@ -1037,6 +1117,33 @@ function initPlanRowGestures() {
 }
 initPlanRowGestures();
 
+// ── USERS (admin only) ──────────────────────────────────────────────────────
+async function renderUsersScreen() {
+  const el = document.getElementById('users-content');
+  el.innerHTML = '<div class="loader"><div class="spinner"></div> Loading…</div>';
+  const snap = await getDocs(collection(db, 'users'));
+  const users = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
+    .sort((a, b) => (a.role === 'admin' ? -1 : b.role === 'admin' ? 1 : (a.email || '').localeCompare(b.email || '')));
+
+  el.innerHTML = users.map(u => {
+    const isMe = u.uid === uid;
+    const name = u.displayName || u.email || '(no name)';
+    return `<div class="user-row">
+      ${u.photoURL ? `<img class="user-avatar" src="${escAttr(u.photoURL)}" onerror="this.remove()">` : '<div class="user-avatar"></div>'}
+      <div class="user-info">
+        <div class="user-name">${name}${u.role === 'admin' ? ' · Admin' : ''}${u.disabled ? ' · Disabled' : ''}</div>
+        <div class="user-email">${u.email || ''}</div>
+      </div>
+      ${isMe ? '' : `<button class="user-toggle-btn${u.disabled ? '' : ' danger'}" onclick="toggleUserAccess('${u.uid}',${!!u.disabled})">${u.disabled ? 'Enable' : 'Disable'}</button>`}
+    </div>`;
+  }).join('') || '<div class="empty"><p>No users yet.</p></div>';
+}
+
+async function toggleUserAccess(targetUid, currentlyDisabled) {
+  await updateDoc(doc(db, 'users', targetUid), { disabled: !currentlyDisabled });
+  renderUsersScreen();
+}
+
 // ── DATE PICKER — the date-btn label triggers the native picker directly ───────
 // direction ('prev'|'next') plays a small slide-in animation on today-content,
 // matching the swipe gesture that triggered it; omitted for date-picker jumps.
@@ -1157,6 +1264,6 @@ function step(id, d)    { const el = document.getElementById(id); el.value = Mat
 Object.assign(window, {
   switchTab, applyDate, goToToday, openDay, closeModal, step,
   quickDone, openLogModal, openHistoryLogModal, logDone, logModified, deleteLog, setPlanMode,
-  openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid,
+  openPlanAdd, savePlanEdit, togglePlanDay, deletePlanExGrid, toggleUserAccess, signOutApp,
   renderExChart
 });

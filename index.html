@@ -119,6 +119,7 @@ nav button {
 }
 nav button.active { color: var(--blue); }
 nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+nav button[hidden] { display: none; }
 
 /* ── SECTION HEADER ── */
 .section-header {
@@ -207,10 +208,12 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
   width: 80px; height: 80px; background: var(--accent); border-radius: 20px;
   display: flex; align-items: center; justify-content: center; font-size: 40px;
 }
-#loading-screen p { font-size: 16px; color: var(--text3); }
-#sign-in-btn { display: none; flex: none; padding: 14px 28px; }
+#loading-screen p { font-size: 16px; color: var(--text3); text-align: center; padding: 0 32px; }
+#sign-in-btn, #sign-out-btn { display: none; flex: none; padding: 14px 28px; }
 #loading-screen.signed-out .spinner { display: none; }
 #loading-screen.signed-out #sign-in-btn { display: block; }
+#loading-screen.disabled .spinner { display: none; }
+#loading-screen.disabled #sign-out-btn { display: block; }
 .spinner {
   width: 32px; height: 32px; border: 3px solid var(--border);
   border-top-color: var(--blue); border-radius: 50%;
@@ -342,6 +345,28 @@ nav button svg { width: 26px; height: 26px; stroke: currentColor; fill: none; st
   touch-action: manipulation;
 }
 
+.sign-out-row { text-align: center; padding: 24px 16px 8px; }
+.sign-out-link {
+  background: none; border: none; color: var(--text3); font-size: 14px;
+  font-family: inherit; cursor: pointer; padding: 8px; touch-action: manipulation;
+}
+
+/* ── USERS (admin) ── */
+.user-row {
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 16px 8px; padding: 12px 14px; background: var(--bg2); border-radius: var(--radius-sm);
+}
+.user-avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; background: var(--bg3); object-fit: cover; }
+.user-info { flex: 1; min-width: 0; }
+.user-name  { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-email { font-size: 13px; color: var(--text3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-toggle-btn {
+  flex-shrink: 0; padding: 8px 14px; border-radius: 20px; border: none;
+  font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  background: var(--bg3); color: var(--text); touch-action: manipulation;
+}
+.user-toggle-btn.danger { background: rgba(255,59,48,0.12); color: var(--red); }
+
 .loader { display: flex; align-items: center; justify-content: center; padding: 60px 20px; color: var(--text3); font-size: 16px; gap: 12px; }
 .empty  { text-align: center; padding: 60px 20px; color: var(--text3); }
 .empty-icon { font-size: 52px; margin-bottom: 14px; }
@@ -368,6 +393,7 @@ input[type="date"] {
   <div class="spinner"></div>
   <p>Loading your plan…</p>
   <button class="btn btn-primary" id="sign-in-btn">Sign in with Google</button>
+  <button class="btn btn-secondary" id="sign-out-btn">Sign out</button>
 </div>
 
 <!-- Sync indicator -->
@@ -405,6 +431,11 @@ input[type="date"] {
     <div id="plan-content"></div>
   </div>
 
+  <div class="screen" id="screen-users">
+    <div class="topbar"><h1>Users</h1></div>
+    <div id="users-content"></div>
+  </div>
+
   <nav>
     <button class="active" onclick="switchTab('today')" id="nav-today">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -421,6 +452,10 @@ input[type="date"] {
     <button onclick="switchTab('plan')" id="nav-plan">
       <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       Plan
+    </button>
+    <button onclick="switchTab('users')" id="nav-users" hidden>
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Users
     </button>
   </nav>
 </div>
@@ -544,7 +579,7 @@ input[type="date"] {
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script type="module" src="js/app.js?v=16"></script>
+<script type="module" src="js/app.js?v=17"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
